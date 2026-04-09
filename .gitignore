@@ -1,0 +1,22 @@
+# Environment & secrets
+frontend/.env
+frontend/.en
+**/.env.local
+**/.env.*.local
+
+# Claude Code
+.claude/
+
+# Supabase temp
+supabase/.temp/
+
+# Node
+node_modules/
+frontend/node_modules/
+
+# Build
+frontend/build/
+
+# OS
+.DS_Store
+**/.DS_Store
