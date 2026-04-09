@@ -1,4 +1,4 @@
-const CACHE = 'artiststage-v1';
+const CACHE = 'artiststage-v2';
 
 // On install: cache the app shell
 self.addEventListener('install', (e) => {
