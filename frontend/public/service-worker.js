@@ -1,21 +1,30 @@
-const CACHE = 'artiststage-v2';
+const CACHE = 'artiststage-v3';
 
-// On install: cache the app shell
+// On install: cache the app shell, then immediately take control
 self.addEventListener('install', (e) => {
   e.waitUntil(
-    caches.open(CACHE).then((c) => c.addAll(['/', '/index.html']))
+    caches.open(CACHE)
+      .then((c) => c.addAll(['/', '/index.html']))
+      .then(() => self.skipWaiting())
   );
-  self.skipWaiting();
 });
 
-// On activate: remove old caches
+// On activate: delete old caches, claim clients, then force-reload all open windows
 self.addEventListener('activate', (e) => {
   e.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
-    )
+    caches.keys()
+      .then((keys) =>
+        Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
+      )
+      .then(() => self.clients.claim())
+      .then(() => self.clients.matchAll({ type: 'window', includeUncontrolled: true }))
+      .then((clients) => {
+        clients.forEach((client) => {
+          // Reload each open window so the new JS bundle is served
+          client.navigate(client.url);
+        });
+      })
   );
-  self.clients.claim();
 });
 
 // Fetch strategy:
