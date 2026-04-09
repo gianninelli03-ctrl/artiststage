@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <rect width="192" height="192" rx="42" fill="#09090B"/>
+  <!-- Mic body -->
+  <rect x="72" y="28" width="48" height="80" rx="24" fill="#FF007A"/>
+  <!-- Mic stand arc -->
+  <path d="M44 96c0 28.7 23.3 52 52 52s52-23.3 52-52" stroke="#FF007A" stroke-width="9" fill="none" stroke-linecap="round"/>
+  <!-- Stem -->
+  <line x1="96" y1="148" x2="96" y2="172" stroke="#FF007A" stroke-width="9" stroke-linecap="round"/>
+  <!-- Base -->
+  <line x1="72" y1="172" x2="120" y2="172" stroke="#FF007A" stroke-width="9" stroke-linecap="round"/>
+</svg>

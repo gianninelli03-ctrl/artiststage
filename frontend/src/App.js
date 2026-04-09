@@ -20,6 +20,11 @@ import PricingPage from './pages/PricingPage';
 import CoinShopPage from './pages/CoinShopPage';
 import CashoutPage from './pages/CashoutPage';
 import AdminPage from './pages/AdminPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
+import PrivacyPage from './pages/PrivacyPage';
+import TermsPage from './pages/TermsPage';
+import PWAInstallBanner from './components/PWAInstallBanner';
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -44,6 +49,10 @@ function AppRouter() {
   const location = useLocation();
   
   // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
+  // Password recovery ha priorità sul normale OAuth callback
+  if (location.hash?.includes('type=recovery')) {
+    return <ResetPasswordPage />;
+  }
   // Check URL fragment for access_token (Supabase Google OAuth callback)
   if (location.hash?.includes('access_token=')) {
     return <AuthCallback />;
@@ -54,12 +63,16 @@ function AppRouter() {
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/discover" element={<DiscoverPage />} />
       <Route path="/stage" element={<StagePage />} />
       <Route path="/pricing" element={<PricingPage />} />
       <Route path="/coins" element={<CoinShopPage />} />
       <Route path="/venue/:venueId" element={<VenueProfilePage />} />
       <Route path="/artist/:profileId" element={<ArtistProfilePage />} />
+      <Route path="/privacy" element={<PrivacyPage />} />
+      <Route path="/terms" element={<TermsPage />} />
       <Route path="/live" element={<LivePage />} />
       <Route path="/live/:streamId" element={<LiveStreamPage />} />
       <Route path="/feed" element={<FeedPage />} />
@@ -113,6 +126,7 @@ function App() {
       <AuthProvider>
         <AppRouter />
         <Toaster position="top-right" richColors />
+        <PWAInstallBanner />
       </AuthProvider>
     </BrowserRouter>
   );
