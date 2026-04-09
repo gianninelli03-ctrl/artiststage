@@ -48,13 +48,13 @@ const ARTIST_TYPES = [
 
 // All categories for the grid
 const ALL_CATEGORIES = [
-  { emoji: '🎤', name: 'Cantante',       desc: 'Voce e performance dal vivo' },
-  { emoji: '🎸', name: 'Musicista',      desc: 'Strumenti, composizione, band' },
-  { emoji: '💃', name: 'Ballerino/a',    desc: 'Danza classica, moderna, urban' },
-  { emoji: '🎭', name: 'Attore/Attrice', desc: 'Teatro, cinema, doppiaggio' },
-  { emoji: '📢', name: 'Presentatore',   desc: 'Conduzione, eventi, cerimonie' },
-  { emoji: '🎧', name: 'DJ',             desc: 'Serate, festival, musica elettronica' },
-  { emoji: '😄', name: 'Cabarettista',   desc: 'Comicità, stand-up, intrattenimento' },
+  { id: 'cantante',    emoji: '🎤', name: 'Cantante',       desc: 'Voce e performance dal vivo' },
+  { id: 'musicista',   emoji: '🎸', name: 'Musicista',      desc: 'Strumenti, composizione, band' },
+  { id: 'ballerino',   emoji: '💃', name: 'Ballerino/a',    desc: 'Danza classica, moderna, urban' },
+  { id: 'attore',      emoji: '🎭', name: 'Attore/Attrice', desc: 'Teatro, cinema, doppiaggio' },
+  { id: 'presentatore',emoji: '📢', name: 'Presentatore',   desc: 'Conduzione, eventi, cerimonie' },
+  { id: 'dj',          emoji: '🎧', name: 'DJ',             desc: 'Serate, festival, musica elettronica' },
+  { id: 'cabarettista',emoji: '😄', name: 'Cabarettista',   desc: 'Comicità, stand-up, intrattenimento' },
 ];
 
 export default function LandingPage() {
@@ -190,7 +190,7 @@ export default function LandingPage() {
             {ALL_CATEGORIES.map((cat, i) => (
               <Link
                 key={i}
-                to="/discover"
+                to={`/discover?category=${cat.id}`}
                 className="group flex flex-col items-center text-center p-5 rounded-2xl bg-zinc-900/60 border border-zinc-800 hover:border-[#FF007A]/40 transition-all duration-300 hover:bg-[#FF007A]/5"
               >
                 <span

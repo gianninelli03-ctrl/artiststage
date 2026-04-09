@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import { MagnifyingGlass, MapPin, CurrencyDollar, X } from '@phosphor-icons/react';
 import { supabase } from '../supabaseClient';
@@ -28,12 +28,13 @@ const CATEGORY_ICONS = {
 
 export default function DiscoverPage() {
   const { onlineUserIds } = useAuth();
+  const [searchParams] = useSearchParams();
   const [items, setItems] = useState([]);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [search, setSearch] = useState('');
-  const [activeCategory, setActiveCategory] = useState('');
+  const [activeCategory, setActiveCategory] = useState(() => searchParams.get('category') || '');
   const [locationFilter, setLocationFilter] = useState('');
   const [availabilityFilter, setAvailabilityFilter] = useState('');
   const [onlineFilter, setOnlineFilter] = useState('all');
