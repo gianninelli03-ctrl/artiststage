@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
+import { toast } from 'sonner';
 
 export default function CoinShopPage() {
   const navigate = useNavigate();
@@ -12,6 +13,18 @@ export default function CoinShopPage() {
   const EMOJIS = ['🪙', '💰', '🎯', '👑'];
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('canceled') === 'true') {
+      toast.error('Pagamento annullato');
+      const backTo = sessionStorage.getItem('stripe_back_to') || '/dashboard';
+      sessionStorage.removeItem('stripe_back_to');
+      navigate(backTo, { replace: true });
+      return;
+    }
+    if (params.get('success') === 'true') {
+      toast.success('Acquisto completato!');
+      navigate('/coins', { replace: true });
+    }
     fetchData();
   }, []);
 
@@ -62,7 +75,8 @@ export default function CoinShopPage() {
 
       if (error) throw new Error(error.message || 'Errore dalla funzione');
       if (!data?.url) throw new Error('URL di pagamento non ricevuto');
-      window.location.href = data.url;
+      window.history.replaceState(null, '', '/dashboard');
+      window.location.replace(data.url);
     } catch (err) {
       console.error('handleBuy error:', err);
       alert('Errore durante il pagamento: ' + err.message);

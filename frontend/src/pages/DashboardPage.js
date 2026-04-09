@@ -361,6 +361,8 @@ function VisitorDashboard({ user }) {
   );
 }
 
+const FREE_PHOTO_LIMIT = 3;
+
 // ─── DASHBOARD ARTISTA ───────────────────────────────────────
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -372,11 +374,17 @@ export default function DashboardPage() {
   const [uploadingFiles, setUploadingFiles] = useState(false);
   const [form, setForm] = useState(DEFAULT_ARTIST_FORM);
   const [newVideoUrl, setNewVideoUrl] = useState('');
+  const [isPro, setIsPro] = useState(false);
 
   // ── ref per scroll automatico al calendario via #calendar ──
   const calendarRef = useRef(null);
   const navigate = useNavigate();
- const handleGoLive = async () => {
+  const handleGoLive = async () => {
+  if (!profile?.id || !profile?.stage_name) {
+    toast.error('Completa il profilo prima di andare in live');
+    setEditing(true);
+    return;
+  }
   const title = window.prompt('Titolo della tua live:', `${profile.stage_name} in Live!`);
   if (!title) return;
   try {
@@ -421,10 +429,34 @@ export default function DashboardPage() {
   }, [profile]); // scatta quando il profilo è caricato e il calendario è montato
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('pro') === 'success') {
+      toast.success('Abbonamento Pro attivato! Bentornato.');
+      window.history.replaceState(null, '', '/dashboard');
+    }
+  }, []);
+
+  useEffect(() => {
     const load = async () => {
       if (!user?.id) return;
       try {
-        const { data, error } = await supabase.from('artist_profiles').select('*').eq('user_id', user.id).single();
+        const [{ data, error }, { data: subData }] = await Promise.all([
+          supabase.from('artist_profiles').select('*').eq('user_id', user.id).single(),
+          supabase.from('artist_subscriptions')
+            .select('status, current_period_end')
+            .eq('artist_id', user.id)
+            .in('status', ['active', 'trialing'])
+            .order('current_period_end', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+        ]);
+
+        // Check active subscription (not expired)
+        if (subData && subData.current_period_end) {
+          const isActive = new Date(subData.current_period_end) > new Date();
+          setIsPro(isActive);
+        }
+
         if (error && error.code !== 'PGRST116') throw error;
         if (data) {
           setProfile(data);
@@ -449,7 +481,7 @@ export default function DashboardPage() {
         } else {
           setEditing(true);
         }
-      } catch (e) { console.error(e); }
+      } catch (e) { console.error(e); setEditing(true); }
       finally { setLoading(false); }
     };
     load();
@@ -496,9 +528,10 @@ export default function DashboardPage() {
         }, { onConflict: 'user_id' })
         .select().single();
       if (error) throw error;
+      const isNew = !profile;
       setProfile(data);
       setEditing(false);
-      toast.success(profile ? 'Profilo aggiornato!' : 'Profilo creato!');
+      toast.success(isNew ? 'Profilo creato!' : 'Profilo aggiornato!');
     } catch (e) { toast.error('Errore: ' + e.message); }
     finally { setSaving(false); }
   };
@@ -516,6 +549,24 @@ export default function DashboardPage() {
   const handleMediaUpload = async (e) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
+
+    // Enforce free plan limit
+    if (!isPro) {
+      const currentCount = form.portfolio_media?.length || 0;
+      if (currentCount >= FREE_PHOTO_LIMIT) {
+        toast.error(`Piano Free: massimo ${FREE_PHOTO_LIMIT} foto. Passa a Pro per foto illimitate.`);
+        navigate('/pricing');
+        e.target.value = '';
+        return;
+      }
+      const allowed = FREE_PHOTO_LIMIT - currentCount;
+      if (files.length > allowed) {
+        toast.error(`Puoi aggiungere solo altre ${allowed} foto con il piano Free.`);
+        e.target.value = '';
+        return;
+      }
+    }
+
     for (const file of files) {
       if (file.size > 10 * 1024 * 1024) { toast.error(`${file.name} supera 10 MB`); e.target.value = ''; return; }
     }
@@ -614,7 +665,10 @@ export default function DashboardPage() {
                     )}
                   </div>
                   <h2 className="text-2xl font-bold text-white mb-1">{profile.stage_name}</h2>
-                  {profile.category && <span className="category-badge mb-2">{profile.category}</span>}
+                  <div className="flex items-center gap-2 mb-2">
+                    {profile.category && <span className="category-badge">{profile.category}</span>}
+                    {isPro && <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-[#6C63FF]/20 text-[#6C63FF] border border-[#6C63FF]/40">PRO</span>}
+                  </div>
                   <p className="flex items-center gap-1 text-zinc-400 text-sm mb-2"><MapPin size={16} />{profile.location}</p>
                   {profile.availability && (
                     <span className={`px-3 py-1 rounded-full text-xs font-medium mb-4 ${
@@ -651,6 +705,18 @@ export default function DashboardPage() {
                   </div>
                 </div>
               </div>
+
+              {!isPro && (
+                <div className="card p-5 flex items-center justify-between gap-4 border border-[#6C63FF]/30 bg-[#6C63FF]/5">
+                  <div>
+                    <p className="font-semibold text-white">Passa a Pro</p>
+                    <p className="text-sm text-zinc-400">Portfolio illimitato, badge verificato e analytics avanzati.</p>
+                  </div>
+                  <button onClick={() => navigate('/pricing')} className="shrink-0 px-4 py-2 rounded-lg bg-[#6C63FF] text-white text-sm font-bold hover:bg-[#5a52e0] transition-colors">
+                    Scopri Pro
+                  </button>
+                </div>
+              )}
 
               {/* ── CALENDARIO con ref per scroll automatico ── */}
               <div ref={calendarRef}>
@@ -770,14 +836,31 @@ export default function DashboardPage() {
             </div>
 
             <div className="card p-6">
-              <h2 className="text-lg font-bold mb-4 text-white">Foto Portfolio</h2>
-              <label className="flex items-center justify-center w-full min-h-[100px] border border-dashed border-zinc-700 rounded-xl cursor-pointer hover:border-[#FF007A] transition-colors px-4 text-center">
-                <input type="file" accept="image/*" multiple className="hidden" onChange={handleMediaUpload} />
-                <div>
-                  <p className="text-white font-medium">{uploadingFiles ? 'Caricamento...' : 'Clicca per caricare foto'}</p>
-                  <p className="text-sm text-zinc-400 mt-1">JPG, PNG, WebP — max 10 MB</p>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-white">Foto Portfolio</h2>
+                {!isPro && (
+                  <span className="text-xs text-zinc-400">
+                    {form.portfolio_media?.length || 0}/{FREE_PHOTO_LIMIT} foto (piano Free)
+                  </span>
+                )}
+              </div>
+              {!isPro && (form.portfolio_media?.length || 0) >= FREE_PHOTO_LIMIT ? (
+                <div className="flex flex-col items-center justify-center p-6 rounded-xl border border-[#6C63FF]/30 bg-[#6C63FF]/5 text-center">
+                  <p className="text-white font-medium mb-1">Limite foto raggiunto</p>
+                  <p className="text-sm text-zinc-400 mb-4">Con il piano Free puoi caricare massimo {FREE_PHOTO_LIMIT} foto.</p>
+                  <button onClick={() => navigate('/pricing')} className="px-4 py-2 rounded-lg bg-[#6C63FF] text-white text-sm font-semibold hover:bg-[#5a52e0] transition-colors">
+                    Passa a Pro — foto illimitate
+                  </button>
                 </div>
-              </label>
+              ) : (
+                <label className="flex items-center justify-center w-full min-h-[100px] border border-dashed border-zinc-700 rounded-xl cursor-pointer hover:border-[#FF007A] transition-colors px-4 text-center">
+                  <input type="file" accept="image/*" multiple className="hidden" onChange={handleMediaUpload} />
+                  <div>
+                    <p className="text-white font-medium">{uploadingFiles ? 'Caricamento...' : 'Clicca per caricare foto'}</p>
+                    <p className="text-sm text-zinc-400 mt-1">JPG, PNG, WebP — max 10 MB</p>
+                  </div>
+                </label>
+              )}
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-4">
                 {form.portfolio_media?.map(media => (
                   <div key={media.id} className="relative rounded-xl overflow-hidden border border-zinc-800">

@@ -10,10 +10,22 @@ import {
 } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
+// STUN pubblici + TURN relay gratuito (Open Relay Project)
+// Senza TURN la maggior parte degli utenti dietro NAT non riesce a connettersi
 const ICE_SERVERS = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' }
+    { urls: 'stun:stun1.l.google.com:19302' },
+    {
+      urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443'],
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+    {
+      urls: 'turns:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
   ]
 };
 
@@ -37,6 +49,7 @@ export default function LiveStreamPage() {
   const [coinAmount, setCoinAmount] = useState('');
   const [sendingCoins, setSendingCoins] = useState(false);
   const [coinError, setCoinError] = useState('');
+  const [videoConnected, setVideoConnected] = useState(false);
 
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
@@ -46,6 +59,9 @@ export default function LiveStreamPage() {
   const messagesEndRef = useRef(null);
   const channelRef = useRef(null);
   const messagesChannelRef = useRef(null);
+  const sessionRef = useRef(null);
+  const videoConnectedRef = useRef(false);
+  const handleSignalRef = useRef(null); // evita stale closure nel listener broadcast
 
   // ── Carica dati live ──────────────────────────────────────
   useEffect(() => {
@@ -98,8 +114,10 @@ export default function LiveStreamPage() {
       filter: `live_id=eq.${streamId}`
     }, payload => setMessages(prev => [...prev, payload.new]));
 
+    // Usa ref per evitare stale closure: il listener chiama sempre
+    // la versione più recente di handleSignal
     channelRef.current.on('broadcast', { event: 'signal' }, ({ payload }) => {
-      handleSignal(payload);
+      handleSignalRef.current?.(payload);
     });
 
     channelRef.current.on('presence', { event: 'sync' }, () => {
@@ -130,10 +148,15 @@ export default function LiveStreamPage() {
       const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       localStreamRef.current = localStream;
       if (localVideoRef.current) localVideoRef.current.srcObject = localStream;
-
-      // Imposta is_live = true sul profilo artista
       await supabase.from('artist_profiles').update({ is_live: true }).eq('user_id', user.id);
       toast.success('Sei in diretta! 🔴');
+
+      // Notifica tutti gli spettatori già presenti che la camera è pronta,
+      // così possono re-inviare viewer-join se lo avevano mandato prima
+      channelRef.current?.send({
+        type: 'broadcast', event: 'signal',
+        payload: { type: 'artist-ready' }
+      });
     } catch (e) {
       toast.error('Impossibile accedere a webcam/microfono');
       console.error(e);
@@ -141,21 +164,34 @@ export default function LiveStreamPage() {
   };
 
   // ── WebRTC: Spettatore richiede stream ───────────────────
-  const requestStream = () => {
+  const requestStream = useCallback(() => {
+    if (!channelRef.current) return;
+    // Chiudi eventuale PC precedente prima di richiedere un nuovo stream
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
     channelRef.current.send({
       type: 'broadcast', event: 'signal',
-      payload: { type: 'viewer-join', viewerId: user.id }
+      payload: { type: 'viewer-join', viewerId: user?.id }
     });
-  };
+  }, [user?.id]);
 
   // ── WebRTC: Gestisce segnali ──────────────────────────────
   const handleSignal = useCallback(async (payload) => {
     if (!payload) return;
 
     if (isArtist) {
+      // ── Lato Artista ──────────────────────────────────────
+
       if (payload.type === 'viewer-join') {
         const viewerId = payload.viewerId;
+        // Se la camera non è ancora pronta, ignora. Lo spettatore riceverà
+        // artist-ready e ri-invierà viewer-join
         if (!localStreamRef.current) return;
+
+        // Chiudi eventuale PC precedente per questo viewer (reconnect)
+        peerConnectionsRef.current[viewerId]?.close();
 
         const pc = new RTCPeerConnection(ICE_SERVERS);
         peerConnectionsRef.current[viewerId] = pc;
@@ -165,15 +201,22 @@ export default function LiveStreamPage() {
         });
 
         pc.onicecandidate = ({ candidate }) => {
-          if (candidate) channelRef.current.send({
+          if (candidate) channelRef.current?.send({
             type: 'broadcast', event: 'signal',
             payload: { type: 'ice-candidate', candidate, target: viewerId, from: 'artist' }
           });
         };
 
+        pc.onconnectionstatechange = () => {
+          if (pc.connectionState === 'failed') {
+            pc.close();
+            delete peerConnectionsRef.current[viewerId];
+          }
+        };
+
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
-        channelRef.current.send({
+        channelRef.current?.send({
           type: 'broadcast', event: 'signal',
           payload: { type: 'offer', offer, target: viewerId }
         });
@@ -181,46 +224,93 @@ export default function LiveStreamPage() {
 
       if (payload.type === 'answer' && payload.target === 'artist') {
         const pc = peerConnectionsRef.current[payload.viewerId];
-        if (pc) await pc.setRemoteDescription(new RTCSessionDescription(payload.answer));
+        if (pc && pc.signalingState !== 'stable') {
+          await pc.setRemoteDescription(new RTCSessionDescription(payload.answer));
+        }
       }
 
       if (payload.type === 'ice-candidate' && payload.from !== 'artist') {
         const pc = peerConnectionsRef.current[payload.viewerId];
-        if (pc && payload.candidate) await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
+        if (pc && pc.remoteDescription && payload.candidate) {
+          await pc.addIceCandidate(new RTCIceCandidate(payload.candidate)).catch(console.warn);
+        }
       }
 
     } else {
+      // ── Lato Spettatore ───────────────────────────────────
+
+      // L'artista ha avviato la camera: ri-chiedi lo stream se non connesso
+      if (payload.type === 'artist-ready') {
+        if (!videoConnectedRef.current) requestStream();
+        return;
+      }
+
       if (payload.type === 'offer' && payload.target === user?.id) {
+        // Chiudi eventuale PC precedente
+        peerConnectionRef.current?.close();
+
         const pc = new RTCPeerConnection(ICE_SERVERS);
         peerConnectionRef.current = pc;
 
         pc.ontrack = (event) => {
-          if (remoteVideoRef.current) remoteVideoRef.current.srcObject = event.streams[0];
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = event.streams[0];
+            setVideoConnected(true);
+            videoConnectedRef.current = true;
+          }
         };
 
         pc.onicecandidate = ({ candidate }) => {
-          if (candidate) channelRef.current.send({
+          if (candidate) channelRef.current?.send({
             type: 'broadcast', event: 'signal',
             payload: { type: 'ice-candidate', candidate, target: 'artist', viewerId: user.id, from: 'viewer' }
           });
         };
 
+        pc.onconnectionstatechange = () => {
+          if (pc.connectionState === 'connected') {
+            setVideoConnected(true);
+            videoConnectedRef.current = true;
+          }
+          if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+            setVideoConnected(false);
+            videoConnectedRef.current = false;
+            // Tenta riconnessione automatica
+            setTimeout(() => {
+              if (!videoConnectedRef.current) requestStream();
+            }, 2000);
+          }
+        };
+
         await pc.setRemoteDescription(new RTCSessionDescription(payload.offer));
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-        channelRef.current.send({
+        channelRef.current?.send({
           type: 'broadcast', event: 'signal',
           payload: { type: 'answer', answer, target: 'artist', viewerId: user.id }
         });
       }
 
       if (payload.type === 'ice-candidate' && payload.from === 'artist' && payload.target === user?.id) {
-        if (peerConnectionRef.current && payload.candidate) {
-          await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(payload.candidate));
+        if (peerConnectionRef.current?.remoteDescription && payload.candidate) {
+          await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(payload.candidate)).catch(console.warn);
         }
       }
     }
-  }, [isArtist, user?.id]);
+  }, [isArtist, user?.id, requestStream]);
+
+  // Aggiorna sempre il ref con la versione corrente di handleSignal
+  handleSignalRef.current = handleSignal;
+
+  // ── Retry automatico per lo spettatore ───────────────────
+  // Se dopo 6 secondi non c'è video, ri-invia viewer-join
+  useEffect(() => {
+    if (isArtist || loading) return;
+    const retry = setInterval(() => {
+      if (!videoConnectedRef.current) requestStream();
+    }, 6000);
+    return () => clearInterval(retry);
+  }, [isArtist, loading, requestStream]);
 
   // ── Controlli artista ─────────────────────────────────────
   const toggleMic = () => {
@@ -328,6 +418,59 @@ export default function LiveStreamPage() {
     }
   };
 
+  // ── Chiusura live d'emergenza (tab chiuso / refresh) ─────
+  useEffect(() => {
+    // Caching della sessione per uso nelle callback non-async
+    supabase.auth.getSession().then(({ data }) => {
+      sessionRef.current = data.session;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!isArtist || !streamId) return;
+
+    const endLiveEmergency = () => {
+      if (!sessionRef.current) return;
+      const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL;
+      const SUPABASE_ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY;
+      const token = sessionRef.current.access_token;
+      const now = new Date().toISOString();
+
+      fetch(`${SUPABASE_URL}/rest/v1/live_streams?id=eq.${streamId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ is_active: false, ended_at: now }),
+        keepalive: true,
+      });
+
+      if (user?.id) {
+        fetch(`${SUPABASE_URL}/rest/v1/artist_profiles?user_id=eq.${user.id}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({ is_live: false }),
+          keepalive: true,
+        });
+      }
+    };
+
+    // pagehide è più affidabile di beforeunload (funziona anche su iOS Safari)
+    window.addEventListener('pagehide', endLiveEmergency);
+    window.addEventListener('beforeunload', endLiveEmergency);
+
+    return () => {
+      window.removeEventListener('pagehide', endLiveEmergency);
+      window.removeEventListener('beforeunload', endLiveEmergency);
+    };
+  }, [isArtist, streamId, user?.id]);
+
   // ── Cleanup ───────────────────────────────────────────────
   useEffect(() => {
     return () => {
@@ -360,12 +503,13 @@ export default function LiveStreamPage() {
             <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
           )}
 
-          {/* Placeholder spettatore in attesa */}
-          {!isArtist && (
+          {/* Placeholder spettatore in attesa — nascosto quando il video è connesso */}
+          {!isArtist && !videoConnected && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="text-center text-zinc-600">
-                <Broadcast size={64} className="mx-auto mb-4" />
+              <div className="text-center text-zinc-500">
+                <Broadcast size={64} className="mx-auto mb-4 animate-pulse" />
                 <p className="text-sm">Connessione in corso...</p>
+                <p className="text-xs text-zinc-600 mt-1">Potrebbe richiedere qualche secondo</p>
               </div>
             </div>
           )}

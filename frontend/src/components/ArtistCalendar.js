@@ -174,6 +174,24 @@ export default function ArtistCalendar({ artistId, artistUserId, currentUser, is
         link: '/dashboard#calendar'
       });
 
+      // Email transazionale all'artista
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (sessionData?.session) {
+        supabase.functions.invoke('send-email', {
+          body: {
+            type: 'booking_request',
+            payload: {
+              artist_id: artistId,
+              visitor_name: visitorName,
+              date: dateFormatted,
+              time_slot: slotLabel,
+              message: bookingMessage,
+            }
+          },
+          headers: { Authorization: `Bearer ${sessionData.session.access_token}` }
+        }).catch(() => {}); // fire & forget
+      }
+
       toast.success('Richiesta inviata! L\'artista ti risponderà presto.');
       setShowModal(false);
       setBookingMessage('');
@@ -245,6 +263,31 @@ export default function ArtistCalendar({ artistId, artistUserId, currentUser, is
           receiver_id: req.visitor_id,
           content: `${emoji} La tua richiesta di prenotazione è stata ${statusText}!\n\nData: ${dateFormatted}\nFascia: ${slotLabel}`
         });
+
+        // Email transazionale al visitatore
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData?.session) {
+          // Get artist name from pending request visitor data we already have, plus artist name
+          const { data: artistProfile } = await supabase
+            .from('artist_profiles')
+            .select('stage_name')
+            .eq('id', req.artist_id)
+            .maybeSingle();
+
+          supabase.functions.invoke('send-email', {
+            body: {
+              type: 'booking_response',
+              payload: {
+                visitor_id: req.visitor_id,
+                artist_name: artistProfile?.stage_name || 'Artista',
+                date: dateFormatted,
+                time_slot: slotLabel,
+                confirmed: status === 'confirmed',
+              }
+            },
+            headers: { Authorization: `Bearer ${sessionData.session.access_token}` }
+          }).catch(() => {}); // fire & forget
+        }
       }
 
       toast.success(status === 'confirmed' ? 'Prenotazione confermata!' : 'Prenotazione rifiutata');

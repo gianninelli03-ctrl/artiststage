@@ -53,7 +53,7 @@ Deno.serve(async (req) => {
             status: sub.status,
             current_period_end: new Date(sub.current_period_end * 1000).toISOString(),
           })
-          .eq("stripe_sub_id", sub.id);
+          .eq("stripe_sub_id", sub.id as string);
         break;
       }
 
@@ -72,6 +72,7 @@ Deno.serve(async (req) => {
 
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
+
         if (session.metadata?.type === "coin_purchase") {
           const userId = session.metadata?.user_id;
           const coins = parseInt(session.metadata?.coins || "0");
@@ -85,6 +86,36 @@ Deno.serve(async (req) => {
             .from("coin_purchases")
             .update({ status: "completed" })
             .eq("stripe_payment_id", session.payment_intent as string);
+        }
+
+        if (session.metadata?.type === "subscription" && session.subscription) {
+          const userId = session.metadata?.user_id;
+          const stripeSubId = session.subscription as string;
+          const stripeCustomerId = session.customer as string;
+
+          // Retrieve the subscription to get period end and interval
+          const sub = await stripe.subscriptions.retrieve(stripeSubId);
+          const interval = sub.items.data[0]?.price?.recurring?.interval;
+          const billingPeriod = interval === "year" ? "yearly" : "monthly";
+
+          // Look up the pro plan_id
+          const { data: planData } = await supabase
+            .from("subscription_plans")
+            .select("id")
+            .eq("name", "pro")
+            .single();
+
+          await supabase
+            .from("artist_subscriptions")
+            .upsert({
+              artist_id: userId,
+              plan_id: planData?.id,
+              stripe_sub_id: stripeSubId,
+              stripe_customer_id: stripeCustomerId,
+              billing_period: billingPeriod,
+              status: sub.status,
+              current_period_end: new Date(sub.current_period_end * 1000).toISOString(),
+            }, { onConflict: "stripe_sub_id" });
         }
         break;
       }

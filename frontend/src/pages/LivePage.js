@@ -10,8 +10,22 @@ export default function LivePage() {
   const [liveStreams, setLiveStreams] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  const GHOST_LIVE_HOURS = 4;
+
+  const cleanupGhostLives = async () => {
+    const cutoff = new Date(Date.now() - GHOST_LIVE_HOURS * 60 * 60 * 1000).toISOString();
+    // Aggiorna nel DB (silently fail se RLS non lo permette)
+    await supabase
+      .from('live_streams')
+      .update({ is_active: false, ended_at: new Date().toISOString() })
+      .eq('is_active', true)
+      .lt('created_at', cutoff);
+  };
+
   const loadLiveStreams = async () => {
     try {
+      await cleanupGhostLives();
+
       const { data, error } = await supabase
         .from('live_streams')
         .select(`
@@ -22,7 +36,11 @@ export default function LivePage() {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setLiveStreams(data || []);
+
+      // Filtro client-side come doppia sicurezza
+      const cutoff = new Date(Date.now() - GHOST_LIVE_HOURS * 60 * 60 * 1000);
+      const fresh = (data || []).filter(s => new Date(s.created_at) > cutoff);
+      setLiveStreams(fresh);
     } catch (e) {
       console.error(e);
     } finally {

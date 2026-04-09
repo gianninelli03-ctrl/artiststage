@@ -27,6 +27,7 @@ export default function ArtistProfilePage() {
   const [likesCount, setLikesCount] = useState(0);
   const [followersCount, setFollowersCount] = useState(0);
   const [following, setFollowing] = useState(false);
+  const [isArtistPro, setIsArtistPro] = useState(false);
 
   useEffect(() => {
     const loadAll = async () => {
@@ -43,7 +44,20 @@ export default function ArtistProfilePage() {
         if (error) throw error;
         setArtist(data);
 
-        // 2. Carica contatori reali
+        // 2. Carica subscription Pro dell'artista
+        const { data: subData } = await supabase
+          .from('artist_subscriptions')
+          .select('status, current_period_end')
+          .eq('artist_id', data.user_id)
+          .in('status', ['active', 'trialing'])
+          .order('current_period_end', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (subData?.current_period_end && new Date(subData.current_period_end) > new Date()) {
+          setIsArtistPro(true);
+        }
+
+        // 3. Carica contatori reali
         const [{ count: likesTotal }, { count: followersTotal }] = await Promise.all([
           supabase.from('likes').select('*', { count: 'exact', head: true }).eq('artist_id', data.id),
           supabase.from('followers').select('*', { count: 'exact', head: true }).eq('artist_id', data.id)
@@ -179,7 +193,12 @@ export default function ArtistProfilePage() {
                   )}
                 </div>
 
-                <h1 className="text-2xl font-bold mb-1 font-['Unbounded'] text-white">{artist.stage_name}</h1>
+                <div className="flex items-center gap-2 mb-1">
+                  <h1 className="text-2xl font-bold font-['Unbounded'] text-white">{artist.stage_name}</h1>
+                  {isArtistPro && (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-[#6C63FF]/20 text-[#6C63FF] border border-[#6C63FF]/40">PRO</span>
+                  )}
+                </div>
                 {!!artist.category && <span className="category-badge mb-3">{artist.category}</span>}
                 {artist.location && (
                   <p className="flex items-center gap-1 text-zinc-400 text-sm mb-4">

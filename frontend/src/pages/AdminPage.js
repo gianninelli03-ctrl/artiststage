@@ -48,17 +48,35 @@ export default function AdminPage() {
   };
 
   const handleCashout = async (id, action) => {
+    const newStatus = action === 'approve' ? 'completed' : 'rejected';
+    const cashout = cashouts.find(c => c.id === id);
+
     const { error } = await supabase
       .from('cashout_requests')
-      .update({ status: action === 'approve' ? 'completed' : 'rejected' })
+      .update({ status: newStatus })
       .eq('id', id);
     if (error) { toast.error('Errore aggiornamento'); return; }
     toast.success(action === 'approve' ? 'Approvato' : 'Rifiutato');
-    setCashouts(prev => prev.map(c => c.id === id
-      ? { ...c, status: action === 'approve' ? 'completed' : 'rejected' }
-      : c
-    ));
+    setCashouts(prev => prev.map(c => c.id === id ? { ...c, status: newStatus } : c));
     setStats(prev => ({ ...prev, pendingCashouts: prev.pendingCashouts - 1 }));
+
+    // Email transazionale all'artista
+    if (cashout) {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (sessionData?.session) {
+        supabase.functions.invoke('send-email', {
+          body: {
+            type: 'cashout_update',
+            payload: {
+              artist_profile_id: cashout.artist_id,
+              amount_eur: cashout.net_euros != null ? Number(cashout.net_euros).toFixed(2) : '—',
+              status: newStatus,
+            }
+          },
+          headers: { Authorization: `Bearer ${sessionData.session.access_token}` }
+        }).catch(() => {});
+      }
+    }
   };
 
   if (loading || !user) return (

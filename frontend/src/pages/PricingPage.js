@@ -1,12 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-
 import { supabase } from '../supabaseClient';
+import { toast } from 'sonner';
 
 export default function PricingPage() {
   const [billing, setBilling] = useState('monthly');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('canceled') === 'true') {
+      toast.error('Pagamento annullato');
+      const backTo = sessionStorage.getItem('stripe_back_to') || '/dashboard';
+      sessionStorage.removeItem('stripe_back_to');
+      navigate(backTo, { replace: true });
+    }
+    if (params.get('pro') === 'success') {
+      toast.success('Abbonamento Pro attivato!');
+      navigate('/dashboard', { replace: true });
+    }
+  }, []);
 
   const plans = {
     free: {
@@ -66,7 +80,8 @@ export default function PricingPage() {
 
       if (error) throw new Error(error.message || 'Errore dalla funzione');
       if (!data?.url) throw new Error('URL di pagamento non ricevuto');
-      window.location.href = data.url;
+      window.history.replaceState(null, '', '/dashboard');
+      window.location.replace(data.url);
     } catch (err) {
       console.error('handleSelectPro error:', err);
       alert('Errore durante il pagamento: ' + err.message);

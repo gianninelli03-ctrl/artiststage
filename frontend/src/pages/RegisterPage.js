@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../supabaseClient';
 import { MicrophoneStage, GoogleLogo, Envelope, Lock, User, Eye, EyeSlash } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
@@ -39,6 +40,16 @@ export default function RegisterPage() {
     try {
       await register(email, password, name, userType);
       toast.success('Registrazione completata!');
+
+      // Welcome email (fire & forget)
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (sessionData?.session) {
+        supabase.functions.invoke('send-email', {
+          body: { type: 'welcome', payload: { email, name } },
+          headers: { Authorization: `Bearer ${sessionData.session.access_token}` }
+        }).catch(() => {});
+      }
+
       navigate('/dashboard');
     } catch (err) {
       const errorMessage = formatApiErrorDetail(err.response?.data?.detail) || err.message;
