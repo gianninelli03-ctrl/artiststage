@@ -114,19 +114,19 @@ export default function LandingPage() {
               </Link>
             </div>
             
-            {/* Stats */}
+            {/* CTA testuali */}
             <div className="flex flex-wrap gap-8 mt-12 justify-center md:justify-start">
               <div className="text-center md:text-left">
-                <p className="text-3xl font-bold text-white">500+</p>
-                <p className="text-sm text-zinc-500">Artisti Registrati</p>
+                <p className="text-3xl font-bold text-white">Crea</p>
+                <p className="text-sm text-zinc-500">il tuo profilo artista</p>
               </div>
               <div className="text-center md:text-left">
-                <p className="text-3xl font-bold text-white">1.2K</p>
-                <p className="text-sm text-zinc-500">Progetti Completati</p>
+                <p className="text-3xl font-bold text-white">Connettiti</p>
+                <p className="text-sm text-zinc-500">con artisti e venue</p>
               </div>
               <div className="text-center md:text-left">
-                <p className="text-3xl font-bold text-white">50+</p>
-                <p className="text-sm text-zinc-500">Live Settimanali</p>
+                <p className="text-3xl font-bold text-white">Vai Live</p>
+                <p className="text-sm text-zinc-500">e monetizza la tua musica</p>
               </div>
             </div>
           </div>
@@ -301,9 +301,9 @@ export default function LandingPage() {
             </div>
             
             <div className="flex items-center gap-6 text-sm text-zinc-500">
-              <a href="#" className="hover:text-white transition-colors">Privacy</a>
-              <a href="#" className="hover:text-white transition-colors">Termini</a>
-              <a href="#" className="hover:text-white transition-colors">Contatti</a>
+              <Link to="/privacy" className="hover:text-white transition-colors">Privacy</Link>
+              <Link to="/terms" className="hover:text-white transition-colors">Termini</Link>
+              <a href="mailto:support@artiststage.it" className="hover:text-white transition-colors">Contatti</a>
             </div>
             
             <p className="text-sm text-zinc-500">
