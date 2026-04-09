@@ -23,36 +23,24 @@ function ShareIcon() {
 export default function PWAInstallBanner() {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showAndroid, setShowAndroid] = useState(false);
-  const [showIOS, setShowIOS] = useState(false);
 
   useEffect(() => {
-    // Already installed as PWA → do nothing
     const isStandalone =
       window.matchMedia('(display-mode: standalone)').matches ||
       window.navigator.standalone === true;
     if (isStandalone) return;
-
-    // Already dismissed → do nothing
     if (localStorage.getItem('pwa-dismissed')) return;
 
     const ua = navigator.userAgent;
     const isIOS = /iphone|ipad|ipod/i.test(ua);
-    const isSafari = /safari/i.test(ua) && !/chrome|crios|fxios|opios/i.test(ua);
+    if (isIOS) return; // iOS handled separately in LandingPage
 
-    if (isIOS && isSafari) {
-      const t = setTimeout(() => setShowIOS(true), 2500);
-      return () => clearTimeout(t);
-    }
-
-    // Android / Chrome / Edge / desktop:
-    // Check if the event was already captured before React mounted
     if (window.__pwaPrompt) {
       setDeferredPrompt(window.__pwaPrompt);
       const t = setTimeout(() => setShowAndroid(true), 2500);
       return () => clearTimeout(t);
     }
 
-    // Otherwise listen for it normally
     const handler = (e) => {
       e.preventDefault();
       window.__pwaPrompt = e;
@@ -65,7 +53,6 @@ export default function PWAInstallBanner() {
 
   const dismiss = () => {
     setShowAndroid(false);
-    setShowIOS(false);
     localStorage.setItem('pwa-dismissed', '1');
   };
 
@@ -78,7 +65,7 @@ export default function PWAInstallBanner() {
     setShowAndroid(false);
   };
 
-  if (!showAndroid && !showIOS) return null;
+  if (!showAndroid) return null;
 
   return (
     <>
@@ -152,16 +139,6 @@ export default function PWAInstallBanner() {
         </div>
       )}
 
-      {showIOS && (
-        <div className="pwa-banner" onClick={dismiss} style={{ cursor: 'pointer' }}>
-          <img src="/icon-192.svg" alt="ArtistStage" className="pwa-icon" />
-          <div className="pwa-text">
-            <p className="pwa-ios-sub">
-              Tocca <ShareIcon /> poi <strong style={{ color: '#fff' }}>Aggiungi alla home</strong>
-            </p>
-          </div>
-        </div>
-      )}
     </>
   );
 }

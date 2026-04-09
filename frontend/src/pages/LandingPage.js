@@ -11,6 +11,7 @@ import {
   ArrowRight
 } from '@phosphor-icons/react';
 import Navbar from '../components/Navbar';
+import IOSInstallHint from '../components/IOSInstallHint';
 import { supabase } from '../supabaseClient';
 
 const HERO_BG = "https://images.unsplash.com/photo-1580529352963-57ac28432755?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMjh8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMGRhcmslMjBuZW9uJTIwbGlnaHRzJTIwc3RhZ2V8ZW58MHx8fHwxNzc1Mzc4OTQ5fDA&ixlib=rb-4.1.0&q=85";
@@ -63,6 +64,7 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-[#09090B]">
       <Navbar />
+      <IOSInstallHint />
       
       {/* Hero Section */}
       <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
