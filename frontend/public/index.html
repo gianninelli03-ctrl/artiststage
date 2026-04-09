@@ -13,8 +13,8 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="ArtistStage" />
-    <link rel="apple-touch-icon" href="/icon-192.svg" />
-    <link rel="apple-touch-startup-image" href="/icon-512.svg" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <link rel="apple-touch-startup-image" href="/icon-512.png" />
 
     <!-- Manifest -->
     <link rel="manifest" href="/manifest.json" />
@@ -33,6 +33,13 @@
     <title>ArtistStage | Piattaforma per Artisti Emergenti</title>
 
     <script>
+      // Capture beforeinstallprompt early, before React mounts
+      window.__pwaPrompt = null;
+      window.addEventListener('beforeinstallprompt', function(e) {
+        e.preventDefault();
+        window.__pwaPrompt = e;
+      });
+
       window.addEventListener("error", function(e) {
         if (e.error instanceof DOMException && e.error.name === "DataCloneError" && e.message && e.message.includes("PerformanceServerTiming")) {
           e.stopImmediatePropagation(); e.preventDefault();

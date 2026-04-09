@@ -44,9 +44,18 @@ export default function PWAInstallBanner() {
       return () => clearTimeout(t);
     }
 
-    // Android / Chrome / Edge / desktop
+    // Android / Chrome / Edge / desktop:
+    // Check if the event was already captured before React mounted
+    if (window.__pwaPrompt) {
+      setDeferredPrompt(window.__pwaPrompt);
+      const t = setTimeout(() => setShowAndroid(true), 2500);
+      return () => clearTimeout(t);
+    }
+
+    // Otherwise listen for it normally
     const handler = (e) => {
       e.preventDefault();
+      window.__pwaPrompt = e;
       setDeferredPrompt(e);
       setTimeout(() => setShowAndroid(true), 2500);
     };
