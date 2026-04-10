@@ -56,6 +56,11 @@ h1, h2, h3, h4, h5, h6 {
     background: var(--text-secondary);
 }
 
+/* Safe area padding for iPhone notch / Dynamic Island */
+.safe-area-top {
+    padding-top: env(safe-area-inset-top);
+}
+
 /* Glassmorphism utility */
 .glass {
     background: var(--surface-glass);
