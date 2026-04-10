@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 import {
   MicrophoneStage,
   MagnifyingGlass,
@@ -58,6 +59,8 @@ const ALL_CATEGORIES = [
 ];
 
 export default function LandingPage() {
+  const { user } = useAuth();
+
   return (
     <div className="min-h-screen bg-[#09090B]">
       <Navbar />
@@ -117,19 +120,30 @@ export default function LandingPage() {
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center md:justify-start">
-              <Link to="/register"
-                className="btn-primary text-lg flex items-center justify-center gap-2"
-                data-testid="hero-cta-register"
-              >
-                <MicrophoneStage size={24} weight="duotone" />
-                Inizia Ora
-              </Link>
-              <Link to="/login"
-                className="btn-outline text-lg flex items-center justify-center gap-2"
-                data-testid="hero-cta-login"
-              >
-                Accedi
-              </Link>
+              {user ? (
+                <Link to="/dashboard"
+                  className="btn-primary text-lg flex items-center justify-center gap-2"
+                >
+                  <MicrophoneStage size={24} weight="duotone" />
+                  Vai alla Dashboard
+                </Link>
+              ) : (
+                <>
+                  <Link to="/register"
+                    className="btn-primary text-lg flex items-center justify-center gap-2"
+                    data-testid="hero-cta-register"
+                  >
+                    <MicrophoneStage size={24} weight="duotone" />
+                    Inizia Ora
+                  </Link>
+                  <Link to="/login"
+                    className="btn-outline text-lg flex items-center justify-center gap-2"
+                    data-testid="hero-cta-login"
+                  >
+                    Accedi
+                  </Link>
+                </>
+              )}
             </div>
 
             {/* Mobile: artist type pills */}
@@ -247,19 +261,30 @@ export default function LandingPage() {
                 Unisciti alla community di artisti emergenti e inizia a costruire la tua carriera oggi stesso.
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <Link to="/register"
-                  className="btn-primary text-lg inline-flex items-center justify-center gap-2"
-                  data-testid="cta-register"
-                >
-                  Crea il tuo Profilo
-                  <ArrowRight size={20} />
-                </Link>
-                <Link to="/login"
-                  className="btn-outline text-lg inline-flex items-center justify-center gap-2"
-                  data-testid="cta-login"
-                >
-                  Hai già un account? Accedi
-                </Link>
+                {user ? (
+                  <Link to="/dashboard"
+                    className="btn-primary text-lg inline-flex items-center justify-center gap-2"
+                  >
+                    Vai alla Dashboard
+                    <ArrowRight size={20} />
+                  </Link>
+                ) : (
+                  <>
+                    <Link to="/register"
+                      className="btn-primary text-lg inline-flex items-center justify-center gap-2"
+                      data-testid="cta-register"
+                    >
+                      Crea il tuo Profilo
+                      <ArrowRight size={20} />
+                    </Link>
+                    <Link to="/login"
+                      className="btn-outline text-lg inline-flex items-center justify-center gap-2"
+                      data-testid="cta-login"
+                    >
+                      Hai già un account? Accedi
+                    </Link>
+                  </>
+                )}
               </div>
             </div>
           </div>
