@@ -124,12 +124,11 @@ export default function LandingPage() {
                 <MicrophoneStage size={24} weight="duotone" />
                 Inizia Ora
               </Link>
-              <Link to="/discover"
+              <Link to="/login"
                 className="btn-outline text-lg flex items-center justify-center gap-2"
-                data-testid="hero-cta-discover"
+                data-testid="hero-cta-login"
               >
-                <MagnifyingGlass size={24} />
-                Esplora Artisti
+                Accedi
               </Link>
             </div>
 
@@ -247,13 +246,21 @@ export default function LandingPage() {
               <p className="text-zinc-400 mb-8 max-w-xl mx-auto">
                 Unisciti alla community di artisti emergenti e inizia a costruire la tua carriera oggi stesso.
               </p>
-              <Link to="/register"
-                className="btn-primary text-lg inline-flex items-center gap-2"
-                data-testid="cta-register"
-              >
-                Crea il tuo Profilo
-                <ArrowRight size={20} />
-              </Link>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <Link to="/register"
+                  className="btn-primary text-lg inline-flex items-center justify-center gap-2"
+                  data-testid="cta-register"
+                >
+                  Crea il tuo Profilo
+                  <ArrowRight size={20} />
+                </Link>
+                <Link to="/login"
+                  className="btn-outline text-lg inline-flex items-center justify-center gap-2"
+                  data-testid="cta-login"
+                >
+                  Hai già un account? Accedi
+                </Link>
+              </div>
             </div>
           </div>
         </div>
