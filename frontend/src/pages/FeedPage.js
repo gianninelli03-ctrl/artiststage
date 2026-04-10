@@ -19,6 +19,7 @@ function FeedCard({ item, user, onLike, isLiked, likesCount }) {
     else navigate(`/venue/${item.id}`);
   };
 
+  // Swipe orizzontale per navigare le foto (non interferisce con lo scroll verticale del parent)
   const handleTouchStart = (e) => {
     touchStartX.current = e.touches[0].clientX;
     touchStartY.current = e.touches[0].clientY;
@@ -28,7 +29,6 @@ function FeedCard({ item, user, onLike, isLiked, likesCount }) {
     if (touchStartX.current === null) return;
     const diffX = touchStartX.current - e.changedTouches[0].clientX;
     const diffY = touchStartY.current - e.changedTouches[0].clientY;
-    // Gestisci solo se il gesto è prevalentemente orizzontale
     if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 40) {
       e.stopPropagation();
       if (diffX > 0) setCurrentPhoto(p => Math.min(p + 1, photos.length - 1));
@@ -45,38 +45,37 @@ function FeedCard({ item, user, onLike, isLiked, likesCount }) {
       onTouchEnd={handleTouchEnd}
     >
       {/* Sfondo sfocato */}
-{(photos.length > 0 || item.profile_image_url) && (
-  <img
-    src={photos.length > 0 ? photos[currentPhoto] : item.profile_image_url}
-    alt=""
-    className="absolute inset-0 w-full h-full object-cover scale-110 blur-xl opacity-60"
-  />
-)}
+      {(photos.length > 0 || item.profile_image_url) && (
+        <img
+          src={photos.length > 0 ? photos[currentPhoto] : item.profile_image_url}
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover scale-110 blur-xl opacity-60"
+        />
+      )}
 
-{/* Foto principale centrata */}
-{photos.length > 0 ? (
-  <img src={photos[currentPhoto]} alt={item.name}
-    className="absolute inset-0 w-full h-full object-contain" />
-) : item.profile_image_url ? (
-  <img src={item.profile_image_url} alt={item.name}
-    className="absolute inset-0 w-full h-full object-contain" />
-) : (
-  <div className="absolute inset-0 bg-gradient-to-br from-[#FF007A]/30 to-[#00F0FF]/30" />
-)}
+      {/* Foto principale centrata */}
+      {photos.length > 0 ? (
+        <img src={photos[currentPhoto]} alt={item.name}
+          className="absolute inset-0 w-full h-full object-contain" />
+      ) : item.profile_image_url ? (
+        <img src={item.profile_image_url} alt={item.name}
+          className="absolute inset-0 w-full h-full object-contain" />
+      ) : (
+        <div className="absolute inset-0 bg-gradient-to-br from-[#FF007A]/30 to-[#00F0FF]/30" />
+      )}
 
       {/* Overlay gradiente */}
       <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/30" />
 
       {/* Indicatori foto */}
       {photos.length > 1 && (
-        <div className="absolute top-20 left-0 right-0 flex justify-center gap-1 z-10">
+        <div className="absolute top-4 left-0 right-0 flex justify-center gap-1 z-10">
           {photos.map((_, i) => (
             <button key={i} onClick={() => setCurrentPhoto(i)}
-              className={`w-1.5 h-1.5 rounded-full transition-all ${i === currentPhoto ? 'bg-white w-4' : 'bg-white/40'}`} />
+              className={`h-1 rounded-full transition-all ${i === currentPhoto ? 'bg-white w-6' : 'bg-white/40 w-1.5'}`} />
           ))}
         </div>
       )}
-
 
       {/* Info in basso a sinistra */}
       <div className="absolute bottom-0 left-0 right-16 p-6 z-10">
@@ -135,25 +134,29 @@ export default function FeedPage() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [likes, setLikes] = useState({});
   const [likesCounts, setLikesCounts] = useState({});
-  const containerRef = useRef(null);
+
+  // Stato animazione
+  const [dragOffset, setDragOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const touchStartX = useRef(null);
   const touchStartY = useRef(null);
+  const swipeAxis = useRef(null); // 'x' | 'y' | null — determinato al primo movement
+  const isAnimating = useRef(false); // debounce wheel
 
   useEffect(() => {
     const load = async () => {
       try {
-        // Carica artisti
         const { data: artists } = await supabase
           .from('artist_profiles')
           .select('*')
           .order('created_at', { ascending: false });
 
-        // Carica venue
         const { data: venues } = await supabase
           .from('visitor_profiles')
           .select('*')
           .order('created_at', { ascending: false });
 
-        // Normalizza artisti
         const artistItems = (artists || []).map(a => ({
           id: a.id,
           user_id: a.user_id,
@@ -168,7 +171,6 @@ export default function FeedPage() {
           created_at: a.created_at
         }));
 
-        // Normalizza venue
         const venueItems = (venues || []).map(v => ({
           id: v.id,
           user_id: v.user_id,
@@ -183,7 +185,6 @@ export default function FeedPage() {
           created_at: v.created_at
         }));
 
-        // Mescola artisti e venue con algoritmo semplice
         const all = [...artistItems, ...venueItems];
         const sorted = all.sort((a, b) => {
           const scorea = (a.likes_count * 2) + (a.photos.length * 0.5) + (new Date(a.created_at) / 1e10);
@@ -193,12 +194,10 @@ export default function FeedPage() {
 
         setItems(sorted);
 
-        // Conta likes
         const counts = {};
         for (const item of sorted) counts[item.id] = item.likes_count;
         setLikesCounts(counts);
 
-        // Carica likes utente
         if (user?.id) {
           const { data: userLikes } = await supabase
             .from('likes')
@@ -219,7 +218,7 @@ export default function FeedPage() {
 
   const handleLike = async (item) => {
     if (!user) return;
-    if (item.type !== 'artist') return; // Like solo per artisti per ora
+    if (item.type !== 'artist') return;
 
     const isLiked = likes[item.id];
     try {
@@ -238,22 +237,59 @@ export default function FeedPage() {
   const goNext = () => setCurrentIndex(i => Math.min(i + 1, items.length - 1));
   const goPrev = () => setCurrentIndex(i => Math.max(i - 1, 0));
 
-  // Swipe touch
-  const handleTouchStart = (e) => { touchStartY.current = e.touches[0].clientY; };
-  const handleTouchEnd = (e) => {
-    if (!touchStartY.current) return;
-    const diff = touchStartY.current - e.changedTouches[0].clientY;
-    if (Math.abs(diff) > 50) {
-      if (diff > 0) goNext();
-      else goPrev();
-    }
-    touchStartY.current = null;
+  // ── Touch handlers ───────────────────────────────────────────
+  const handleTouchStart = (e) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+    swipeAxis.current = null;
+    setIsDragging(true);
   };
 
-  // Scroll wheel
+  const handleTouchMove = (e) => {
+    if (touchStartY.current === null) return;
+    const dx = Math.abs(e.touches[0].clientX - touchStartX.current);
+    const dy = Math.abs(e.touches[0].clientY - touchStartY.current);
+
+    // Determina l'asse dominante al primo movimento apprezzabile
+    if (!swipeAxis.current && (dx > 8 || dy > 8)) {
+      swipeAxis.current = dx > dy ? 'x' : 'y';
+    }
+
+    if (swipeAxis.current === 'y') {
+      const offset = e.touches[0].clientY - touchStartY.current;
+      // Resistenza agli estremi (primo/ultimo card)
+      const atEdge =
+        (currentIndex === 0 && offset > 0) ||
+        (currentIndex === items.length - 1 && offset < 0);
+      setDragOffset(atEdge ? offset * 0.15 : offset);
+    }
+  };
+
+  const handleTouchEnd = (e) => {
+    setIsDragging(false);
+    setDragOffset(0);
+
+    if (swipeAxis.current === 'y' && touchStartY.current !== null) {
+      const diff = touchStartY.current - e.changedTouches[0].clientY;
+      if (Math.abs(diff) > 80) {
+        if (diff > 0) goNext();
+        else goPrev();
+      }
+    }
+
+    touchStartX.current = null;
+    touchStartY.current = null;
+    swipeAxis.current = null;
+  };
+
+  // ── Wheel (desktop) con debounce ────────────────────────────
   const handleWheel = (e) => {
-    if (e.deltaY > 50) goNext();
-    else if (e.deltaY < -50) goPrev();
+    if (isAnimating.current) return;
+    if (Math.abs(e.deltaY) < 30) return;
+    isAnimating.current = true;
+    if (e.deltaY > 0) goNext();
+    else goPrev();
+    setTimeout(() => { isAnimating.current = false; }, 500);
   };
 
   if (loading) return (
@@ -278,22 +314,49 @@ export default function FeedPage() {
     <div className="fixed inset-0 bg-black overflow-hidden">
       <Navbar />
 
-      <div ref={containerRef} className="absolute inset-0 pt-16"
+      {/* Viewport del feed (tutto tranne la navbar) */}
+      <div
+        className="absolute inset-0 pt-16 overflow-hidden"
         onWheel={handleWheel}
         onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}>
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
+        {/* Stack animato: si trasla verticalmente */}
+        <div
+          style={{
+            position: 'relative',
+            height: '100%',
+            transform: `translateY(calc(${-currentIndex * 100}% + ${dragOffset}px))`,
+            transition: isDragging ? 'none' : 'transform 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+            willChange: 'transform',
+          }}
+        >
+          {items.map((item, index) => (
+            <div
+              key={item.id}
+              style={{
+                position: 'absolute',
+                top: `${index * 100}%`,
+                width: '100%',
+                height: '100%',
+              }}
+            >
+              {/* Renderizza solo le card vicine per performance */}
+              {Math.abs(index - currentIndex) <= 1 && (
+                <FeedCard
+                  item={item}
+                  user={user}
+                  onLike={handleLike}
+                  isLiked={!!likes[item.id]}
+                  likesCount={likesCounts[item.id] || 0}
+                />
+              )}
+            </div>
+          ))}
+        </div>
 
-        {items[currentIndex] && (
-          <FeedCard
-            item={items[currentIndex]}
-            user={user}
-            onLike={handleLike}
-            isLiked={!!likes[items[currentIndex].id]}
-            likesCount={likesCounts[items[currentIndex].id] || 0}
-          />
-        )}
-
-        {/* Navigazione */}
+        {/* Frecce navigazione — fuori dallo stack, fisse */}
         <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col gap-2 z-20">
           <button onClick={goPrev} disabled={currentIndex === 0}
             className={`p-2 rounded-full transition-all ${currentIndex === 0 ? 'opacity-20' : 'bg-black/40 hover:bg-black/60'}`}>
@@ -306,7 +369,7 @@ export default function FeedPage() {
         </div>
 
         {/* Contatore */}
-        <div className="absolute top-20 right-4 bg-black/40 px-3 py-1 rounded-full z-20">
+        <div className="absolute top-4 right-4 bg-black/40 px-3 py-1 rounded-full z-20">
           <span className="text-white text-xs">{currentIndex + 1} / {items.length}</span>
         </div>
       </div>
