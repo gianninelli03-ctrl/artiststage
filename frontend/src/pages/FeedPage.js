@@ -11,14 +11,39 @@ function FeedCard({ item, user, onLike, isLiked, likesCount }) {
   const [currentPhoto, setCurrentPhoto] = useState(0);
   const photos = item.photos || [];
   const navigate = useNavigate();
+  const touchStartX = useRef(null);
+  const touchStartY = useRef(null);
 
   const goToProfile = () => {
     if (item.type === 'artist') navigate(`/artist/${item.id}`);
     else navigate(`/venue/${item.id}`);
   };
 
+  const handleTouchStart = (e) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e) => {
+    if (touchStartX.current === null) return;
+    const diffX = touchStartX.current - e.changedTouches[0].clientX;
+    const diffY = touchStartY.current - e.changedTouches[0].clientY;
+    // Gestisci solo se il gesto è prevalentemente orizzontale
+    if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 40) {
+      e.stopPropagation();
+      if (diffX > 0) setCurrentPhoto(p => Math.min(p + 1, photos.length - 1));
+      else setCurrentPhoto(p => Math.max(p - 1, 0));
+    }
+    touchStartX.current = null;
+    touchStartY.current = null;
+  };
+
   return (
-    <div className="relative w-full h-full bg-black flex items-center justify-center overflow-hidden">
+    <div
+      className="relative w-full h-full bg-black flex items-center justify-center overflow-hidden"
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
       {/* Sfondo sfocato */}
 {(photos.length > 0 || item.profile_image_url) && (
   <img
@@ -52,23 +77,6 @@ function FeedCard({ item, user, onLike, isLiked, likesCount }) {
         </div>
       )}
 
-      {/* Frecce foto */}
-      {photos.length > 1 && (
-        <>
-          {currentPhoto > 0 && (
-            <button onClick={() => setCurrentPhoto(p => p - 1)}
-              className="absolute left-4 top-1/2 -translate-y-1/2 z-10 bg-black/40 p-2 rounded-full">
-              ◀
-            </button>
-          )}
-          {currentPhoto < photos.length - 1 && (
-            <button onClick={() => setCurrentPhoto(p => p + 1)}
-              className="absolute right-4 top-1/2 -translate-y-1/2 z-10 bg-black/40 p-2 rounded-full">
-              ▶
-            </button>
-          )}
-        </>
-      )}
 
       {/* Info in basso a sinistra */}
       <div className="absolute bottom-0 left-0 right-16 p-6 z-10">
