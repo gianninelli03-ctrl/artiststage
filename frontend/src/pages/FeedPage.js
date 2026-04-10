@@ -30,7 +30,6 @@ function FeedCard({ item, user, onLike, isLiked, likesCount }) {
     const diffX = touchStartX.current - e.changedTouches[0].clientX;
     const diffY = touchStartY.current - e.changedTouches[0].clientY;
     if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 40) {
-      e.stopPropagation();
       if (diffX > 0) setCurrentPhoto(p => Math.min(p + 1, photos.length - 1));
       else setCurrentPhoto(p => Math.max(p - 1, 0));
     }
