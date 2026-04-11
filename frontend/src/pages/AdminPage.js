@@ -98,8 +98,8 @@ export default function AdminPage() {
     </div>
   );
 
-  const TABS = ['stats', 'users', 'purchases', 'cashouts'];
-  const TAB_LABELS = { stats: 'Statistiche', users: 'Utenti', purchases: 'Transazioni', cashouts: `Cashout${stats.pendingCashouts > 0 ? ` (${stats.pendingCashouts})` : ''}` };
+  const TABS = ['stats', 'users', 'purchases', 'cashouts', 'storico'];
+  const TAB_LABELS = { stats: 'Statistiche', users: 'Utenti', purchases: 'Transazioni', cashouts: `Cashout${stats.pendingCashouts > 0 ? ` (${stats.pendingCashouts})` : ''}`, storico: 'Storico' };
 
   return (
     <div style={{ minHeight: '100vh', background: '#0a0a0a', color: '#fff', padding: '32px 20px' }}>
@@ -326,6 +326,82 @@ export default function AdminPage() {
             </table>
           </div>
         )}
+
+        {/* STORICO */}
+        {tab === 'storico' && (() => {
+          const settled = cashouts.filter(c => ['completed', 'rejected'].includes(c.status));
+          const parseDay = s => { const [d,m,y] = s.split('/'); return new Date(`${y}-${m}-${d}`); };
+
+          // Raggruppa per giorno
+          const byDay = settled.reduce((acc, c) => {
+            const day = c.created_at ? new Date(c.created_at).toLocaleDateString('it-IT') : '—';
+            if (!acc[day]) acc[day] = { completed: [], rejected: [] };
+            if (c.status === 'completed') acc[day].completed.push(c);
+            else acc[day].rejected.push(c);
+            return acc;
+          }, {});
+
+          const days = Object.keys(byDay).filter(d => d !== '—').sort((a, b) => parseDay(b) - parseDay(a));
+          if (d => d === '—') days.push('—');
+
+          if (days.length === 0) return (
+            <div style={{ background: '#111', border: '1px solid #222', borderRadius: 16, padding: 32, textAlign: 'center', color: '#444' }}>
+              Nessuna richiesta chiusa
+            </div>
+          );
+
+          const RowItem = ({ c }) => (
+            <div style={{ padding: '10px 0', borderBottom: '1px solid #1e1e1e' }}>
+              <div style={{ fontSize: 12, color: '#888', marginBottom: 2 }}>{c.artist_id?.slice(0, 10)}…</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 13, color: '#ccc' }}>🪙 {c.coins_redeemed}</span>
+                <span style={{ fontSize: 14, fontWeight: 700, color: c.status === 'completed' ? '#00C896' : '#FF3B30' }}>
+                  €{Number(c.net_euros || 0).toFixed(2)}
+                </span>
+              </div>
+            </div>
+          );
+
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {days.map(day => {
+                const { completed, rejected } = byDay[day] || { completed: [], rejected: [] };
+                return (
+                  <div key={day} style={{ background: '#111', border: '1px solid #222', borderRadius: 16, overflow: 'hidden' }}>
+                    {/* Header giorno */}
+                    <div style={{ background: '#1a1a1a', padding: '12px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontWeight: 700, fontSize: 14 }}>{day}</span>
+                      <div style={{ display: 'flex', gap: 16, fontSize: 12 }}>
+                        <span style={{ color: '#00C896' }}>✓ {completed.length} — €{completed.reduce((s,c) => s + (Number(c.net_euros)||0), 0).toFixed(2)}</span>
+                        <span style={{ color: '#FF3B30' }}>✗ {rejected.length} — €{rejected.reduce((s,c) => s + (Number(c.net_euros)||0), 0).toFixed(2)}</span>
+                      </div>
+                    </div>
+
+                    {/* Due colonne */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
+                      {/* Accettate */}
+                      <div style={{ padding: '12px 20px', borderRight: '1px solid #1e1e1e' }}>
+                        <p style={{ color: '#00C896', fontSize: 11, fontWeight: 700, margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: 1 }}>Accettate</p>
+                        {completed.length === 0
+                          ? <p style={{ color: '#333', fontSize: 12 }}>—</p>
+                          : completed.map(c => <RowItem key={c.id} c={c} />)
+                        }
+                      </div>
+                      {/* Rifiutate */}
+                      <div style={{ padding: '12px 20px' }}>
+                        <p style={{ color: '#FF3B30', fontSize: 11, fontWeight: 700, margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: 1 }}>Rifiutate</p>
+                        {rejected.length === 0
+                          ? <p style={{ color: '#333', fontSize: 12 }}>—</p>
+                          : rejected.map(c => <RowItem key={c.id} c={c} />)
+                        }
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
 
       </div>
     </div>
