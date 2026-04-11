@@ -50,19 +50,10 @@ export default function CashoutPage() {
     setRequesting(true);
     try {
       const coinsToRedeem = balance;
-      const { error: insertError } = await supabase.from('cashout_requests').insert({
-        user_id: user.id,
-        coins: coinsToRedeem,
-        amount_eur: parseFloat(netValue.toFixed(2)),
-        status: 'pending',
+      const { error: rpcError } = await supabase.rpc('create_cashout_request', {
+        coins_amount: coinsToRedeem,
       });
-      if (insertError) throw insertError;
-
-      const { error: balError } = await supabase
-        .from('coin_balances')
-        .update({ balance: 0 })
-        .eq('user_id', user.id);
-      if (balError) throw balError;
+      if (rpcError) throw rpcError;
 
       setBalance(0);
       setPendingRequests(prev => [{
