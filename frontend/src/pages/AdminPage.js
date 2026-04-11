@@ -177,34 +177,116 @@ export default function AdminPage() {
         )}
 
         {/* TRANSAZIONI */}
-        {tab === 'purchases' && (
-          <div style={{ background: '#111', border: '1px solid #222', borderRadius: 16, overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr style={{ background: '#1a1a1a' }}>
-                  {['User ID', 'Monete', 'Importo', 'Status', 'Data'].map(h => (
-                    <th key={h} style={thStyle}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {purchases.map(p => (
-                  <tr key={p.id} style={{ borderBottom: '1px solid #1a1a1a' }}>
-                    <td style={{ ...tdStyle, color: '#555', fontSize: 11 }}>{p.user_id?.slice(0, 12)}…</td>
-                    <td style={tdStyle}>🪙 {p.coins_received}</td>
-                    <td style={tdStyle}>€{((p.amount_cents || 0) / 100).toFixed(2)}</td>
-                    <td style={tdStyle}>
-                      <span style={statusBadge(p.status)}>{p.status}</span>
-                    </td>
-                    <td style={{ ...tdStyle, color: '#555' }}>
-                      {new Date(p.created_at).toLocaleDateString('it-IT')}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        {tab === 'purchases' && (() => {
+          const settled = cashouts.filter(c => ['completed', 'rejected'].includes(c.status));
+          const byMonth = settled.reduce((acc, c) => {
+            const key = c.created_at ? new Date(c.created_at).toISOString().slice(0, 7) : 'unknown';
+            if (!acc[key]) acc[key] = [];
+            acc[key].push(c);
+            return acc;
+          }, {});
+          const months = Object.keys(byMonth).sort((a, b) => b.localeCompare(a));
+
+          if (months.length === 0) return (
+            <div style={{ background: '#111', border: '1px solid #222', borderRadius: 16, padding: 32, textAlign: 'center', color: '#444' }}>
+              Nessuna transazione completata o rifiutata
+            </div>
+          );
+
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
+              {months.map(monthKey => {
+                const items = byMonth[monthKey];
+                const completed = items.filter(c => c.status === 'completed');
+                const rejected = items.filter(c => c.status === 'rejected');
+                const totalCompleted = completed.reduce((s, c) => s + (Number(c.net_euros) || 0), 0);
+                const totalRejected = rejected.reduce((s, c) => s + (Number(c.net_euros) || 0), 0);
+                const monthLabel = monthKey === 'unknown' ? 'Data sconosciuta' :
+                  new Date(`${monthKey}-01T00:00:00`).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
+
+                const byDay = (list) => list.reduce((acc, c) => {
+                  const day = c.created_at ? new Date(c.created_at).toLocaleDateString('it-IT') : '—';
+                  if (!acc[day]) acc[day] = [];
+                  acc[day].push(c);
+                  return acc;
+                }, {});
+
+                const CashoutTable = ({ list }) => (
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 8 }}>
+                    <thead>
+                      <tr style={{ background: '#1a1a1a' }}>
+                        {['Artist ID', 'Monete', 'Importo netto', 'Status', 'Data'].map(h => (
+                          <th key={h} style={thStyle}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {list.map(c => (
+                        <tr key={c.id} style={{ borderBottom: '1px solid #1a1a1a' }}>
+                          <td style={{ ...tdStyle, fontSize: 11, color: '#555' }}>{c.artist_id?.slice(0, 12)}…</td>
+                          <td style={tdStyle}>🪙 {c.coins_redeemed}</td>
+                          <td style={tdStyle}>€{Number(c.net_euros || 0).toFixed(2)}</td>
+                          <td style={tdStyle}><span style={statusBadge(c.status)}>{c.status}</span></td>
+                          <td style={{ ...tdStyle, color: '#555' }}>{c.created_at ? new Date(c.created_at).toLocaleDateString('it-IT') : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                );
+
+                return (
+                  <div key={monthKey} style={{ background: '#111', border: '1px solid #222', borderRadius: 16, padding: 24 }}>
+                    <h2 style={{ fontSize: 20, fontWeight: 800, margin: '0 0 24px', textTransform: 'capitalize' }}>{monthLabel}</h2>
+
+                    {/* Accettate */}
+                    <div style={{ marginBottom: 28 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                        <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: '#00C896' }}>✓ Accettate ({completed.length})</h3>
+                        <span style={{ color: '#00C896', fontWeight: 700 }}>Totale: €{totalCompleted.toFixed(2)}</span>
+                      </div>
+                      {completed.length === 0
+                        ? <p style={{ color: '#444', fontSize: 13 }}>Nessuna</p>
+                        : Object.entries(byDay(completed))
+                            .sort((a, b) => {
+                              const parse = s => { const [d,m,y] = s.split('/'); return new Date(`${y}-${m}-${d}`); };
+                              return parse(b[0]) - parse(a[0]);
+                            })
+                            .map(([day, list]) => (
+                              <div key={day} style={{ marginBottom: 16 }}>
+                                <p style={{ color: '#666', fontSize: 12, margin: '0 0 6px', fontWeight: 600 }}>{day}</p>
+                                <CashoutTable list={list} />
+                              </div>
+                            ))
+                      }
+                    </div>
+
+                    {/* Rifiutate */}
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                        <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: '#FF3B30' }}>✗ Rifiutate ({rejected.length})</h3>
+                        <span style={{ color: '#FF3B30', fontWeight: 700 }}>Totale: €{totalRejected.toFixed(2)}</span>
+                      </div>
+                      {rejected.length === 0
+                        ? <p style={{ color: '#444', fontSize: 13 }}>Nessuna</p>
+                        : Object.entries(byDay(rejected))
+                            .sort((a, b) => {
+                              const parse = s => { const [d,m,y] = s.split('/'); return new Date(`${y}-${m}-${d}`); };
+                              return parse(b[0]) - parse(a[0]);
+                            })
+                            .map(([day, list]) => (
+                              <div key={day} style={{ marginBottom: 16 }}>
+                                <p style={{ color: '#666', fontSize: 12, margin: '0 0 6px', fontWeight: 600 }}>{day}</p>
+                                <CashoutTable list={list} />
+                              </div>
+                            ))
+                      }
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
 
         {/* CASHOUT */}
         {tab === 'cashouts' && (
