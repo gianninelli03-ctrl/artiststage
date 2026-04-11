@@ -6,12 +6,10 @@ import { supabase } from '../supabaseClient';
 import {
   Broadcast, MicrophoneSlash, Microphone,
   VideoCamera, VideoCameraSlash, PhoneDisconnect,
-  PaperPlaneTilt, Heart, Users
+  PaperPlaneTilt, Heart, Users, UserPlus, Check, X
 } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
-// STUN pubblici + TURN relay gratuito (Open Relay Project)
-// Senza TURN la maggior parte degli utenti dietro NAT non riesce a connettersi
 const ICE_SERVERS = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -30,10 +28,11 @@ const ICE_SERVERS = {
 };
 
 export default function LiveStreamPage() {
-  const { streamId } = useParams(); // ← param corretto da App.js
+  const { streamId } = useParams();
   const { user } = useAuth();
   const navigate = useNavigate();
 
+  // ── Stato base ────────────────────────────────────────────
   const [stream, setStream] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isArtist, setIsArtist] = useState(false);
@@ -51,6 +50,15 @@ export default function LiveStreamPage() {
   const [coinError, setCoinError] = useState('');
   const [videoConnected, setVideoConnected] = useState(false);
 
+  // ── Stato co-host ─────────────────────────────────────────
+  const [coHostRequests, setCoHostRequests] = useState([]); // richieste in attesa (lato artista)
+  const [coHostStatus, setCoHostStatus] = useState(null);   // null | 'pending' | 'accepted' (lato viewer)
+  const [isCoHost, setIsCoHost] = useState(false);          // viewer diventato co-host
+  const [coHostConnected, setCoHostConnected] = useState(false); // artista vede il video co-host
+  const [showRequestsPanel, setShowRequestsPanel] = useState(false);
+  const [presenceList, setPresenceList] = useState([]);      // lista spettatori da presence
+
+  // ── Refs WebRTC base ──────────────────────────────────────
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const localStreamRef = useRef(null);
@@ -58,10 +66,20 @@ export default function LiveStreamPage() {
   const peerConnectionRef = useRef(null);
   const messagesEndRef = useRef(null);
   const channelRef = useRef(null);
-  const messagesChannelRef = useRef(null);
   const sessionRef = useRef(null);
   const videoConnectedRef = useRef(false);
-  const handleSignalRef = useRef(null); // evita stale closure nel listener broadcast
+  const handleSignalRef = useRef(null);
+
+  // ── Refs WebRTC co-host ───────────────────────────────────
+  const coHostPCRef = useRef(null);           // PC del co-host (artist riceve / viewer invia)
+  const coHostLocalStreamRef = useRef(null);  // stream locale del co-host
+  const coHostLocalVideoRef = useRef(null);   // self-view del co-host (PiP)
+  const coHostRemoteVideoRef = useRef(null);  // video co-host visto dall'artista (PiP)
+  const startCoHostRef = useRef(null);        // ref a startCoHost per evitare stale closure
+  const streamRef = useRef(null);             // ref a stream per usarlo in handleSignal
+
+  // Tieni streamRef aggiornato
+  useEffect(() => { streamRef.current = stream; }, [stream]);
 
   // ── Carica dati live ──────────────────────────────────────
   useEffect(() => {
@@ -114,21 +132,21 @@ export default function LiveStreamPage() {
       filter: `live_id=eq.${streamId}`
     }, payload => setMessages(prev => [...prev, payload.new]));
 
-    // Usa ref per evitare stale closure: il listener chiama sempre
-    // la versione più recente di handleSignal
     channelRef.current.on('broadcast', { event: 'signal' }, ({ payload }) => {
       handleSignalRef.current?.(payload);
     });
 
     channelRef.current.on('presence', { event: 'sync' }, () => {
-      const count = Object.keys(channelRef.current.presenceState()).length;
-      setViewerCount(count);
-      supabase.from('live_streams').update({ viewer_count: count }).eq('id', streamId);
+      const state = channelRef.current.presenceState();
+      const viewers = Object.values(state).flat();
+      setViewerCount(viewers.length);
+      setPresenceList(viewers);
+      supabase.from('live_streams').update({ viewer_count: viewers.length }).eq('id', streamId);
     });
 
     channelRef.current.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
-        await channelRef.current.track({ user_id: user.id, name: user.name });
+        await channelRef.current.track({ user_id: user.id, name: user.name, image: user.profile_image });
         if (isArtist) startBroadcast();
         else requestStream();
       }
@@ -150,9 +168,6 @@ export default function LiveStreamPage() {
       if (localVideoRef.current) localVideoRef.current.srcObject = localStream;
       await supabase.from('artist_profiles').update({ is_live: true }).eq('user_id', user.id);
       toast.success('Sei in diretta! 🔴');
-
-      // Notifica tutti gli spettatori già presenti che la camera è pronta,
-      // così possono re-inviare viewer-join se lo avevano mandato prima
       channelRef.current?.send({
         type: 'broadcast', event: 'signal',
         payload: { type: 'artist-ready' }
@@ -166,18 +181,49 @@ export default function LiveStreamPage() {
   // ── WebRTC: Spettatore richiede stream ───────────────────
   const requestStream = useCallback(() => {
     if (!channelRef.current) return;
-    // Chiudi eventuale PC precedente prima di richiedere un nuovo stream
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
-      peerConnectionRef.current = null;
-    }
+    peerConnectionRef.current?.close();
+    peerConnectionRef.current = null;
     channelRef.current.send({
       type: 'broadcast', event: 'signal',
       payload: { type: 'viewer-join', viewerId: user?.id }
     });
   }, [user?.id]);
 
-  // ── WebRTC: Gestisce segnali ──────────────────────────────
+  // ── Co-host: viewer avvia la propria camera e invia al artista ──
+  const startCoHost = useCallback(async () => {
+    try {
+      const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      coHostLocalStreamRef.current = localStream;
+      if (coHostLocalVideoRef.current) coHostLocalVideoRef.current.srcObject = localStream;
+
+      const pc = new RTCPeerConnection(ICE_SERVERS);
+      coHostPCRef.current = pc;
+      localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+
+      pc.onicecandidate = ({ candidate }) => {
+        if (candidate) channelRef.current?.send({
+          type: 'broadcast', event: 'signal',
+          payload: { type: 'cohost-ice', candidate, viewerId: user?.id, from: 'cohost' }
+        });
+      };
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      channelRef.current?.send({
+        type: 'broadcast', event: 'signal',
+        payload: { type: 'cohost-offer', offer, viewerId: user?.id }
+      });
+    } catch {
+      toast.error('Impossibile accedere a webcam/microfono');
+      setIsCoHost(false);
+      setCoHostStatus(null);
+    }
+  }, [user?.id]);
+
+  // Tieni startCoHostRef aggiornato
+  useEffect(() => { startCoHostRef.current = startCoHost; }, [startCoHost]);
+
+  // ── WebRTC: Gestisce tutti i segnali ─────────────────────
   const handleSignal = useCallback(async (payload) => {
     if (!payload) return;
 
@@ -186,34 +232,20 @@ export default function LiveStreamPage() {
 
       if (payload.type === 'viewer-join') {
         const viewerId = payload.viewerId;
-        // Se la camera non è ancora pronta, ignora. Lo spettatore riceverà
-        // artist-ready e ri-invierà viewer-join
         if (!localStreamRef.current) return;
-
-        // Chiudi eventuale PC precedente per questo viewer (reconnect)
         peerConnectionsRef.current[viewerId]?.close();
-
         const pc = new RTCPeerConnection(ICE_SERVERS);
         peerConnectionsRef.current[viewerId] = pc;
-
-        localStreamRef.current.getTracks().forEach(track => {
-          pc.addTrack(track, localStreamRef.current);
-        });
-
+        localStreamRef.current.getTracks().forEach(track => pc.addTrack(track, localStreamRef.current));
         pc.onicecandidate = ({ candidate }) => {
           if (candidate) channelRef.current?.send({
             type: 'broadcast', event: 'signal',
             payload: { type: 'ice-candidate', candidate, target: viewerId, from: 'artist' }
           });
         };
-
         pc.onconnectionstatechange = () => {
-          if (pc.connectionState === 'failed') {
-            pc.close();
-            delete peerConnectionsRef.current[viewerId];
-          }
+          if (pc.connectionState === 'failed') { pc.close(); delete peerConnectionsRef.current[viewerId]; }
         };
-
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         channelRef.current?.send({
@@ -231,27 +263,81 @@ export default function LiveStreamPage() {
 
       if (payload.type === 'ice-candidate' && payload.from !== 'artist') {
         const pc = peerConnectionsRef.current[payload.viewerId];
-        if (pc && pc.remoteDescription && payload.candidate) {
+        if (pc?.remoteDescription && payload.candidate) {
           await pc.addIceCandidate(new RTCIceCandidate(payload.candidate)).catch(console.warn);
         }
       }
 
-    } else {
-      // ── Lato Spettatore ───────────────────────────────────
+      // ── Co-host: artista riceve richiesta ─────────────────
+      if (payload.type === 'cohost-request') {
+        const req = { viewerId: payload.viewerId, viewerName: payload.viewerName, viewerImage: payload.viewerImage };
+        setCoHostRequests(prev => prev.find(r => r.viewerId === payload.viewerId) ? prev : [...prev, req]);
+        setShowRequestsPanel(true);
+        toast(`🎤 ${payload.viewerName} vuole salire in live`);
+      }
 
-      // L'artista ha avviato la camera: ri-chiedi lo stream se non connesso
+      // ── Co-host: artista riceve offer dal co-host ─────────
+      if (payload.type === 'cohost-offer') {
+        coHostPCRef.current?.close();
+        const pc = new RTCPeerConnection(ICE_SERVERS);
+        coHostPCRef.current = pc;
+
+        pc.ontrack = (e) => {
+          if (coHostRemoteVideoRef.current) coHostRemoteVideoRef.current.srcObject = e.streams[0];
+          setCoHostConnected(true);
+        };
+        pc.onconnectionstatechange = () => {
+          if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+            setCoHostConnected(false);
+          }
+        };
+        pc.onicecandidate = ({ candidate }) => {
+          if (candidate) channelRef.current?.send({
+            type: 'broadcast', event: 'signal',
+            payload: { type: 'cohost-ice', candidate, viewerId: payload.viewerId, from: 'artist' }
+          });
+        };
+
+        await pc.setRemoteDescription(new RTCSessionDescription(payload.offer));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        channelRef.current?.send({
+          type: 'broadcast', event: 'signal',
+          payload: { type: 'cohost-answer', answer, viewerId: payload.viewerId }
+        });
+        setCoHostRequests(prev => prev.filter(r => r.viewerId !== payload.viewerId));
+      }
+
+      if (payload.type === 'cohost-ice' && payload.from === 'cohost') {
+        if (coHostPCRef.current?.remoteDescription && payload.candidate) {
+          await coHostPCRef.current.addIceCandidate(new RTCIceCandidate(payload.candidate)).catch(console.warn);
+        }
+      }
+
+      if (payload.type === 'cohost-leave') {
+        coHostPCRef.current?.close();
+        coHostPCRef.current = null;
+        if (coHostRemoteVideoRef.current) coHostRemoteVideoRef.current.srcObject = null;
+        setCoHostConnected(false);
+        toast(`Il co-host ha lasciato la live`);
+      }
+
+      if (payload.type === 'cohost-reject-invite') {
+        toast(`Lo spettatore ha rifiutato l'invito`);
+      }
+
+    } else {
+      // ── Lato Spettatore / Co-host ─────────────────────────
+
       if (payload.type === 'artist-ready') {
         if (!videoConnectedRef.current) requestStream();
         return;
       }
 
       if (payload.type === 'offer' && payload.target === user?.id) {
-        // Chiudi eventuale PC precedente
         peerConnectionRef.current?.close();
-
         const pc = new RTCPeerConnection(ICE_SERVERS);
         peerConnectionRef.current = pc;
-
         pc.ontrack = (event) => {
           if (remoteVideoRef.current) {
             remoteVideoRef.current.srcObject = event.streams[0];
@@ -259,29 +345,20 @@ export default function LiveStreamPage() {
             videoConnectedRef.current = true;
           }
         };
-
         pc.onicecandidate = ({ candidate }) => {
           if (candidate) channelRef.current?.send({
             type: 'broadcast', event: 'signal',
             payload: { type: 'ice-candidate', candidate, target: 'artist', viewerId: user.id, from: 'viewer' }
           });
         };
-
         pc.onconnectionstatechange = () => {
-          if (pc.connectionState === 'connected') {
-            setVideoConnected(true);
-            videoConnectedRef.current = true;
-          }
+          if (pc.connectionState === 'connected') { setVideoConnected(true); videoConnectedRef.current = true; }
           if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
             setVideoConnected(false);
             videoConnectedRef.current = false;
-            // Tenta riconnessione automatica
-            setTimeout(() => {
-              if (!videoConnectedRef.current) requestStream();
-            }, 2000);
+            setTimeout(() => { if (!videoConnectedRef.current) requestStream(); }, 2000);
           }
         };
-
         await pc.setRemoteDescription(new RTCSessionDescription(payload.offer));
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
@@ -296,14 +373,64 @@ export default function LiveStreamPage() {
           await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(payload.candidate)).catch(console.warn);
         }
       }
+
+      // ── Co-host: viewer riceve accettazione ───────────────
+      if (payload.type === 'cohost-accept' && payload.viewerId === user?.id) {
+        setIsCoHost(true);
+        setCoHostStatus('accepted');
+        toast.success('Sei salito in live! 🎤');
+        startCoHostRef.current?.();
+      }
+
+      // ── Co-host: viewer riceve rifiuto ────────────────────
+      if (payload.type === 'cohost-reject' && payload.viewerId === user?.id) {
+        setCoHostStatus(null);
+        toast.error('Richiesta rifiutata dal presentatore');
+      }
+
+      // ── Co-host: viewer riceve invito dall'artista ────────
+      if (payload.type === 'cohost-invite' && payload.viewerId === user?.id) {
+        const artistName = streamRef.current?.artist?.stage_name || 'Il presentatore';
+        toast(`🎤 ${artistName} ti invita a salire in live!`, {
+          duration: 15000,
+          action: {
+            label: 'Accetta',
+            onClick: () => {
+              setIsCoHost(true);
+              setCoHostStatus('accepted');
+              startCoHostRef.current?.();
+            }
+          },
+          cancel: {
+            label: 'Rifiuta',
+            onClick: () => {
+              channelRef.current?.send({
+                type: 'broadcast', event: 'signal',
+                payload: { type: 'cohost-reject-invite', viewerId: user?.id }
+              });
+            }
+          }
+        });
+      }
+
+      // ── Co-host: viewer riceve answer dall'artista ────────
+      if (payload.type === 'cohost-answer' && payload.viewerId === user?.id) {
+        if (coHostPCRef.current?.signalingState !== 'stable') {
+          await coHostPCRef.current.setRemoteDescription(new RTCSessionDescription(payload.answer));
+        }
+      }
+
+      if (payload.type === 'cohost-ice' && payload.from === 'artist' && payload.viewerId === user?.id) {
+        if (coHostPCRef.current?.remoteDescription && payload.candidate) {
+          await coHostPCRef.current.addIceCandidate(new RTCIceCandidate(payload.candidate)).catch(console.warn);
+        }
+      }
     }
   }, [isArtist, user?.id, requestStream]);
 
-  // Aggiorna sempre il ref con la versione corrente di handleSignal
   handleSignalRef.current = handleSignal;
 
   // ── Retry automatico per lo spettatore ───────────────────
-  // Se dopo 6 secondi non c'è video, ri-invia viewer-join
   useEffect(() => {
     if (isArtist || loading) return;
     const retry = setInterval(() => {
@@ -311,6 +438,62 @@ export default function LiveStreamPage() {
     }, 6000);
     return () => clearInterval(retry);
   }, [isArtist, loading, requestStream]);
+
+  // ── Azioni co-host ────────────────────────────────────────
+
+  // Viewer chiede di salire
+  const requestCoHost = () => {
+    if (!user || coHostStatus === 'pending') return;
+    setCoHostStatus('pending');
+    channelRef.current?.send({
+      type: 'broadcast', event: 'signal',
+      payload: { type: 'cohost-request', viewerId: user.id, viewerName: user.name, viewerImage: user.profile_image }
+    });
+    toast('Richiesta inviata, attendi l\'approvazione del presentatore');
+  };
+
+  // Artista accetta richiesta
+  const acceptRequest = (viewerId) => {
+    channelRef.current?.send({
+      type: 'broadcast', event: 'signal',
+      payload: { type: 'cohost-accept', viewerId }
+    });
+    setCoHostRequests(prev => prev.filter(r => r.viewerId !== viewerId));
+  };
+
+  // Artista rifiuta richiesta
+  const rejectRequest = (viewerId) => {
+    channelRef.current?.send({
+      type: 'broadcast', event: 'signal',
+      payload: { type: 'cohost-reject', viewerId }
+    });
+    setCoHostRequests(prev => prev.filter(r => r.viewerId !== viewerId));
+  };
+
+  // Artista invita uno spettatore
+  const inviteViewer = (viewerId) => {
+    channelRef.current?.send({
+      type: 'broadcast', event: 'signal',
+      payload: { type: 'cohost-invite', viewerId }
+    });
+    toast('Invito inviato');
+  };
+
+  // Co-host lascia la live
+  const leaveCoHost = () => {
+    coHostLocalStreamRef.current?.getTracks().forEach(t => t.stop());
+    coHostLocalStreamRef.current = null;
+    coHostPCRef.current?.close();
+    coHostPCRef.current = null;
+    if (coHostLocalVideoRef.current) coHostLocalVideoRef.current.srcObject = null;
+    setIsCoHost(false);
+    setCoHostStatus(null);
+    setCoHostConnected(false);
+    channelRef.current?.send({
+      type: 'broadcast', event: 'signal',
+      payload: { type: 'cohost-leave', viewerId: user?.id }
+    });
+  };
 
   // ── Controlli artista ─────────────────────────────────────
   const toggleMic = () => {
@@ -330,12 +513,11 @@ export default function LiveStreamPage() {
     try {
       localStreamRef.current?.getTracks().forEach(t => t.stop());
       Object.values(peerConnectionsRef.current).forEach(pc => pc.close());
-
+      coHostPCRef.current?.close();
       await Promise.all([
         supabase.from('live_streams').update({ is_active: false, ended_at: new Date().toISOString() }).eq('id', streamId),
         supabase.from('artist_profiles').update({ is_live: false }).eq('user_id', user.id)
       ]);
-
       toast.success('Live terminata');
       navigate('/dashboard');
     } catch (e) {
@@ -369,44 +551,26 @@ export default function LiveStreamPage() {
     await supabase.from('live_streams').update({ likes_count: newLikes }).eq('id', streamId);
   };
 
-  // ── Saldo monete ─────────────────────────────────────────
+  // ── Saldo monete ──────────────────────────────────────────
   useEffect(() => {
     if (!user?.id || isArtist) return;
-    supabase
-      .from('coin_balances')
-      .select('balance')
-      .eq('user_id', user.id)
-      .single()
+    supabase.from('coin_balances').select('balance').eq('user_id', user.id).single()
       .then(({ data }) => setCoinBalance(data?.balance ?? 0));
   }, [user?.id, isArtist]);
 
-  // ── Invia monete ──────────────────────────────────────────
   const sendCoins = async (amount) => {
     const n = parseInt(amount, 10);
-    if (!n || n < 1) return;
-    if (coinBalance === null) return;
-    if (n > coinBalance) {
-      setCoinError('Saldo insufficiente');
-      return;
-    }
+    if (!n || n < 1 || coinBalance === null) return;
+    if (n > coinBalance) { setCoinError('Saldo insufficiente'); return; }
     setSendingCoins(true);
     setCoinError('');
     try {
       const { error: txError } = await supabase.from('coin_transactions').insert({
-        user_id: user.id,
-        recipient_id: stream?.artist?.user_id,
-        amount: n,
-        type: 'tip',
-        live_id: streamId,
+        user_id: user.id, recipient_id: stream?.artist?.user_id, amount: n, type: 'tip', live_id: streamId,
       });
       if (txError) throw txError;
-
-      const { error: balError } = await supabase
-        .from('coin_balances')
-        .update({ balance: coinBalance - n })
-        .eq('user_id', user.id);
+      const { error: balError } = await supabase.from('coin_balances').update({ balance: coinBalance - n }).eq('user_id', user.id);
       if (balError) throw balError;
-
       setCoinBalance(prev => prev - n);
       setCoinAmount('');
       toast.success(`🪙 ${n} monete inviate!`);
@@ -418,53 +582,36 @@ export default function LiveStreamPage() {
     }
   };
 
-  // ── Chiusura live d'emergenza (tab chiuso / refresh) ─────
+  // ── Chiusura emergenza ────────────────────────────────────
   useEffect(() => {
-    // Caching della sessione per uso nelle callback non-async
-    supabase.auth.getSession().then(({ data }) => {
-      sessionRef.current = data.session;
-    });
+    supabase.auth.getSession().then(({ data }) => { sessionRef.current = data.session; });
   }, []);
 
   useEffect(() => {
     if (!isArtist || !streamId) return;
-
     const endLiveEmergency = () => {
       if (!sessionRef.current) return;
       const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL;
       const SUPABASE_ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY;
       const token = sessionRef.current.access_token;
       const now = new Date().toISOString();
-
       fetch(`${SUPABASE_URL}/rest/v1/live_streams?id=eq.${streamId}`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ is_active: false, ended_at: now }),
         keepalive: true,
       });
-
       if (user?.id) {
         fetch(`${SUPABASE_URL}/rest/v1/artist_profiles?user_id=eq.${user.id}`, {
           method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': SUPABASE_ANON_KEY,
-            'Authorization': `Bearer ${token}`,
-          },
+          headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({ is_live: false }),
           keepalive: true,
         });
       }
     };
-
-    // pagehide è più affidabile di beforeunload (funziona anche su iOS Safari)
     window.addEventListener('pagehide', endLiveEmergency);
     window.addEventListener('beforeunload', endLiveEmergency);
-
     return () => {
       window.removeEventListener('pagehide', endLiveEmergency);
       window.removeEventListener('beforeunload', endLiveEmergency);
@@ -475,11 +622,14 @@ export default function LiveStreamPage() {
   useEffect(() => {
     return () => {
       localStreamRef.current?.getTracks().forEach(t => t.stop());
+      coHostLocalStreamRef.current?.getTracks().forEach(t => t.stop());
       Object.values(peerConnectionsRef.current).forEach(pc => pc.close());
       peerConnectionRef.current?.close();
+      coHostPCRef.current?.close();
     };
   }, []);
 
+  // ── Render ────────────────────────────────────────────────
   if (loading) return (
     <div className="min-h-screen bg-[#09090B]">
       <Navbar />
@@ -489,21 +639,26 @@ export default function LiveStreamPage() {
     </div>
   );
 
+  // Viewer della presence list (esclude l'artista stesso)
+  const invitableViewers = presenceList.filter(v => v.user_id !== user?.id);
+
   return (
     <div className="min-h-screen bg-[#09090B] flex flex-col">
       <Navbar />
 
       <main className="flex-1 pt-16 flex flex-col lg:flex-row overflow-hidden" style={{ height: 'calc(100vh - 64px)' }}>
 
-        {/* Video */}
+        {/* ── Area Video ──────────────────────────────────── */}
         <div className="flex-1 relative bg-black flex items-center justify-center">
+
+          {/* Video principale */}
           {isArtist ? (
             <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
           ) : (
             <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
           )}
 
-          {/* Placeholder spettatore in attesa — nascosto quando il video è connesso */}
+          {/* Placeholder spettatore in attesa */}
           {!isArtist && !videoConnected && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div className="text-center text-zinc-500">
@@ -511,6 +666,22 @@ export default function LiveStreamPage() {
                 <p className="text-sm">Connessione in corso...</p>
                 <p className="text-xs text-zinc-600 mt-1">Potrebbe richiedere qualche secondo</p>
               </div>
+            </div>
+          )}
+
+          {/* PiP co-host: l'artista vede il video del co-host */}
+          {isArtist && coHostConnected && (
+            <div className="absolute bottom-24 left-4 w-32 h-24 rounded-xl overflow-hidden border-2 border-[#FF007A] shadow-lg shadow-[#FF007A]/30">
+              <video ref={coHostRemoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
+              <div className="absolute bottom-1 left-1 text-[10px] text-white bg-black/60 px-1 rounded">co-host</div>
+            </div>
+          )}
+
+          {/* PiP self-view: il co-host vede se stesso */}
+          {isCoHost && (
+            <div className="absolute bottom-24 left-4 w-32 h-24 rounded-xl overflow-hidden border-2 border-[#00F0FF] shadow-lg shadow-[#00F0FF]/30">
+              <video ref={coHostLocalVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+              <div className="absolute bottom-1 left-1 text-[10px] text-white bg-black/60 px-1 rounded">Tu</div>
             </div>
           )}
 
@@ -535,7 +706,7 @@ export default function LiveStreamPage() {
           )}
 
           {/* Titolo */}
-          <div className="absolute bottom-24 left-4">
+          <div className="absolute bottom-24 left-4" style={{ left: isArtist && coHostConnected ? '10rem' : '1rem' }}>
             <p className="text-white font-bold text-lg drop-shadow">{stream?.title}</p>
           </div>
 
@@ -554,6 +725,19 @@ export default function LiveStreamPage() {
                 className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${camOn ? 'bg-zinc-800 hover:bg-zinc-700' : 'bg-red-500'}`}>
                 {camOn ? <VideoCamera size={20} className="text-white" /> : <VideoCameraSlash size={20} className="text-white" />}
               </button>
+              {/* Bottone co-host con badge */}
+              <button
+                onClick={() => setShowRequestsPanel(p => !p)}
+                className="relative w-12 h-12 rounded-full bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-colors"
+                title="Richieste co-host"
+              >
+                <UserPlus size={20} className="text-white" />
+                {coHostRequests.length > 0 && (
+                  <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-[#FF007A] text-white text-[10px] font-bold flex items-center justify-center">
+                    {coHostRequests.length}
+                  </span>
+                )}
+              </button>
             </div>
           )}
 
@@ -563,9 +747,86 @@ export default function LiveStreamPage() {
               <Heart size={40} weight="fill" className="text-[#FF007A]" />
             </div>
           )}
+
+          {/* ── Pannello richieste co-host (artista) ────────── */}
+          {showRequestsPanel && isArtist && (
+            <div className="absolute inset-0 bg-black/70 z-30 flex items-center justify-center p-4">
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-sm max-h-[70vh] flex flex-col">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
+                  <h3 className="font-bold text-white">Co-host</h3>
+                  <button onClick={() => setShowRequestsPanel(false)}
+                    className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors">
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div className="overflow-y-auto flex-1 p-4 space-y-5">
+                  {/* Richieste in attesa */}
+                  {coHostRequests.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-[#FF007A] uppercase tracking-wider mb-2">
+                        Richieste ({coHostRequests.length})
+                      </p>
+                      <div className="space-y-2">
+                        {coHostRequests.map(req => (
+                          <div key={req.viewerId} className="flex items-center gap-3 p-3 rounded-xl bg-zinc-800/60">
+                            {req.viewerImage ? (
+                              <img src={req.viewerImage} alt="" className="w-9 h-9 rounded-full object-cover flex-shrink-0" />
+                            ) : (
+                              <div className="w-9 h-9 rounded-full bg-[#FF007A]/20 flex items-center justify-center text-[#FF007A] font-bold text-sm flex-shrink-0">
+                                {req.viewerName?.charAt(0)?.toUpperCase()}
+                              </div>
+                            )}
+                            <span className="text-white text-sm flex-1 truncate">{req.viewerName}</span>
+                            <button onClick={() => acceptRequest(req.viewerId)}
+                              className="p-1.5 rounded-lg bg-green-500/20 hover:bg-green-500/40 text-green-400 transition-colors" title="Accetta">
+                              <Check size={16} weight="bold" />
+                            </button>
+                            <button onClick={() => rejectRequest(req.viewerId)}
+                              className="p-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/40 text-red-400 transition-colors" title="Rifiuta">
+                              <X size={16} weight="bold" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Lista spettatori da invitare */}
+                  <div>
+                    <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
+                      Spettatori ({invitableViewers.length})
+                    </p>
+                    {invitableViewers.length === 0 ? (
+                      <p className="text-zinc-600 text-sm text-center py-4">Nessuno spettatore online</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {invitableViewers.map(v => (
+                          <div key={v.user_id} className="flex items-center gap-3 p-3 rounded-xl bg-zinc-800/40">
+                            {v.image ? (
+                              <img src={v.image} alt="" className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
+                            ) : (
+                              <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center text-zinc-300 font-bold text-sm flex-shrink-0">
+                                {v.name?.charAt(0)?.toUpperCase()}
+                              </div>
+                            )}
+                            <span className="text-white text-sm flex-1 truncate">{v.name}</span>
+                            <button onClick={() => inviteViewer(v.user_id)}
+                              className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#FF007A]/20 hover:bg-[#FF007A]/40 text-[#FF007A] text-xs font-semibold transition-colors">
+                              <UserPlus size={14} />Invita
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Chat */}
+        {/* ── Chat ────────────────────────────────────────── */}
         <div className="w-full lg:w-80 flex flex-col border-l border-zinc-800 bg-[#09090B]" style={{ maxHeight: 'calc(100vh - 64px)' }}>
           <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
             <h2 className="font-bold text-white">Chat live</h2>
@@ -597,60 +858,67 @@ export default function LiveStreamPage() {
             <div ref={messagesEndRef} />
           </div>
 
-          <div className="p-4 border-t border-zinc-800">
+          <div className="p-4 border-t border-zinc-800 space-y-3">
             {user ? (
               <>
-                <form onSubmit={sendMessage} className="flex gap-2 mb-3">
+                <form onSubmit={sendMessage} className="flex gap-2">
                   <input type="text" value={newMessage} onChange={e => setNewMessage(e.target.value)}
                     className="input-dark flex-1 text-sm" placeholder="Scrivi un messaggio..." maxLength={200} />
                   <button type="submit" disabled={!newMessage.trim() || sendingMsg} className="btn-primary px-3">
                     <PaperPlaneTilt size={18} weight="fill" />
                   </button>
                 </form>
+
                 <button onClick={sendLike}
                   className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-zinc-700 text-zinc-400 hover:border-[#FF007A] hover:text-[#FF007A] transition-colors">
                   <Heart size={18} />Metti like
                 </button>
 
+                {/* ── Bottone co-host (solo spettatori) ─── */}
+                {!isArtist && (
+                  <div>
+                    {isCoHost ? (
+                      <button onClick={leaveCoHost}
+                        className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-[#FF007A]/10 border border-[#FF007A]/40 text-[#FF007A] hover:bg-[#FF007A]/20 transition-colors text-sm font-semibold">
+                        <PhoneDisconnect size={16} />Lascia il co-host
+                      </button>
+                    ) : coHostStatus === 'pending' ? (
+                      <div className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-zinc-800 border border-zinc-700 text-zinc-400 text-sm">
+                        <div className="w-3 h-3 border border-zinc-400 border-t-transparent rounded-full animate-spin" />
+                        Richiesta inviata...
+                      </div>
+                    ) : (
+                      <button onClick={requestCoHost}
+                        className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-zinc-700 text-zinc-400 hover:border-[#00F0FF] hover:text-[#00F0FF] transition-colors text-sm">
+                        <Microphone size={16} />Chiedi di salire in live
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 {/* Pannello monete — solo per spettatori */}
                 {!isArtist && (
-                  <div className="mt-3 p-3 rounded-xl bg-zinc-900 border border-zinc-800">
+                  <div className="p-3 rounded-xl bg-zinc-900 border border-zinc-800">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-semibold text-zinc-400">Invia monete</span>
-                      <span className="text-xs text-yellow-400 font-medium">
-                        🪙 {coinBalance ?? '…'}
-                      </span>
+                      <span className="text-xs text-yellow-400 font-medium">🪙 {coinBalance ?? '…'}</span>
                     </div>
-
-                    {/* Bottone rapido 1 moneta + input personalizzato */}
                     <div className="flex gap-2">
-                      <button
-                        onClick={() => sendCoins(1)}
-                        disabled={sendingCoins || coinBalance === 0}
-                        className="flex-shrink-0 px-3 py-2 rounded-lg bg-yellow-500 hover:bg-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed text-black text-xs font-bold transition-colors"
-                      >
+                      <button onClick={() => sendCoins(1)} disabled={sendingCoins || coinBalance === 0}
+                        className="flex-shrink-0 px-3 py-2 rounded-lg bg-yellow-500 hover:bg-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed text-black text-xs font-bold transition-colors">
                         🪙 Invia 1
                       </button>
-                      <input
-                        type="number"
-                        min="1"
-                        value={coinAmount}
+                      <input type="number" min="1" value={coinAmount}
                         onChange={e => { setCoinAmount(e.target.value); setCoinError(''); }}
                         placeholder="Quantità"
                         className="flex-1 min-w-0 bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-2 text-white text-xs focus:outline-none focus:border-yellow-500"
                       />
-                      <button
-                        onClick={() => sendCoins(coinAmount)}
-                        disabled={sendingCoins || !coinAmount || coinAmount < 1}
-                        className="flex-shrink-0 px-3 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition-colors"
-                      >
+                      <button onClick={() => sendCoins(coinAmount)} disabled={sendingCoins || !coinAmount || coinAmount < 1}
+                        className="flex-shrink-0 px-3 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition-colors">
                         Invia
                       </button>
                     </div>
-
-                    {coinError && (
-                      <p className="mt-1.5 text-xs text-red-400">{coinError}</p>
-                    )}
+                    {coinError && <p className="mt-1.5 text-xs text-red-400">{coinError}</p>}
                   </div>
                 )}
               </>
