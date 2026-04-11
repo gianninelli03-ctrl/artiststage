@@ -16,7 +16,7 @@ function FeedCard({ item, user, onLike, isLiked, likesCount }) {
 
   const goToProfile = () => {
     if (item.type === 'artist') navigate(`/artist/${item.id}`);
-    else navigate(`/venue/${item.id}`);
+    else navigate(`/venue/${item.user_id}`); // VenueProfilePage fa .eq('user_id', venueId)
   };
 
   // Swipe orizzontale per navigare le foto (non interferisce con lo scroll verticale del parent)
