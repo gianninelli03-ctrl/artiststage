@@ -8,13 +8,18 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+    // onAuthStateChange in supabase-js v2 spara immediatamente INITIAL_SESSION
+    // con la sessione letta da localStorage — non serve getSession() separato.
+    // Gestiamo ogni evento esplicitamente per evitare logout involontari.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        setUser(session?.user ?? null);
+        setLoading(false);
+      } else if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setLoading(false);
+      }
+      // PASSWORD_RECOVERY e altri eventi: non toccare lo stato
     });
 
     return () => subscription.unsubscribe();
