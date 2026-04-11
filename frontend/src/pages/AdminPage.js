@@ -179,6 +179,9 @@ export default function AdminPage() {
         {/* TRANSAZIONI */}
         {tab === 'purchases' && (() => {
           const settled = cashouts.filter(c => ['completed', 'rejected'].includes(c.status));
+          const parseDay = s => { const [d,m,y] = s.split('/'); return new Date(`${y}-${m}-${d}`); };
+
+          // Raggruppa per mese
           const byMonth = settled.reduce((acc, c) => {
             const key = c.created_at ? new Date(c.created_at).toISOString().slice(0, 7) : 'unknown';
             if (!acc[key]) acc[key] = [];
@@ -189,12 +192,12 @@ export default function AdminPage() {
 
           if (months.length === 0) return (
             <div style={{ background: '#111', border: '1px solid #222', borderRadius: 16, padding: 32, textAlign: 'center', color: '#444' }}>
-              Nessuna transazione completata o rifiutata
+              Nessuna transazione chiusa
             </div>
           );
 
           return (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
               {months.map(monthKey => {
                 const items = byMonth[monthKey];
                 const completed = items.filter(c => c.status === 'completed');
@@ -204,83 +207,83 @@ export default function AdminPage() {
                 const monthLabel = monthKey === 'unknown' ? 'Data sconosciuta' :
                   new Date(`${monthKey}-01T00:00:00`).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
 
+                // Raggruppa per giorno
                 const byDay = (list) => list.reduce((acc, c) => {
                   const day = c.created_at ? new Date(c.created_at).toLocaleDateString('it-IT') : '—';
-                  if (!acc[day]) acc[day] = [];
-                  acc[day].push(c);
+                  if (!acc[day]) acc[day] = { count: 0, total: 0 };
+                  acc[day].count += 1;
+                  acc[day].total += Number(c.net_euros) || 0;
                   return acc;
                 }, {});
 
-                const CashoutTable = ({ list }) => (
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 8 }}>
-                    <thead>
-                      <tr style={{ background: '#1a1a1a' }}>
-                        {['Artist ID', 'Monete', 'Importo netto', 'Status', 'Data'].map(h => (
-                          <th key={h} style={thStyle}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {list.map(c => (
-                        <tr key={c.id} style={{ borderBottom: '1px solid #1a1a1a' }}>
-                          <td style={{ ...tdStyle, fontSize: 11, color: '#555' }}>{c.artist_id?.slice(0, 12)}…</td>
-                          <td style={tdStyle}>🪙 {c.coins_redeemed}</td>
-                          <td style={tdStyle}>€{Number(c.net_euros || 0).toFixed(2)}</td>
-                          <td style={tdStyle}><span style={statusBadge(c.status)}>{c.status}</span></td>
-                          <td style={{ ...tdStyle, color: '#555' }}>{c.created_at ? new Date(c.created_at).toLocaleDateString('it-IT') : '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                );
-
                 return (
                   <div key={monthKey} style={{ background: '#111', border: '1px solid #222', borderRadius: 16, padding: 24 }}>
-                    <h2 style={{ fontSize: 20, fontWeight: 800, margin: '0 0 24px', textTransform: 'capitalize' }}>{monthLabel}</h2>
-
-                    {/* Accettate */}
-                    <div style={{ marginBottom: 28 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                        <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: '#00C896' }}>✓ Accettate ({completed.length})</h3>
-                        <span style={{ color: '#00C896', fontWeight: 700 }}>Totale: €{totalCompleted.toFixed(2)}</span>
+                    {/* Intestazione mese */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+                      <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0, textTransform: 'capitalize' }}>{monthLabel}</h2>
+                      <div style={{ display: 'flex', gap: 16 }}>
+                        <span style={{ color: '#00C896', fontWeight: 700, fontSize: 13 }}>✓ €{totalCompleted.toFixed(2)}</span>
+                        <span style={{ color: '#FF3B30', fontWeight: 700, fontSize: 13 }}>✗ €{totalRejected.toFixed(2)}</span>
                       </div>
-                      {completed.length === 0
-                        ? <p style={{ color: '#444', fontSize: 13 }}>Nessuna</p>
-                        : Object.entries(byDay(completed))
-                            .sort((a, b) => {
-                              const parse = s => { const [d,m,y] = s.split('/'); return new Date(`${y}-${m}-${d}`); };
-                              return parse(b[0]) - parse(a[0]);
-                            })
-                            .map(([day, list]) => (
-                              <div key={day} style={{ marginBottom: 16 }}>
-                                <p style={{ color: '#666', fontSize: 12, margin: '0 0 6px', fontWeight: 600 }}>{day}</p>
-                                <CashoutTable list={list} />
-                              </div>
-                            ))
-                      }
                     </div>
 
-                    {/* Rifiutate */}
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                        <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: '#FF3B30' }}>✗ Rifiutate ({rejected.length})</h3>
-                        <span style={{ color: '#FF3B30', fontWeight: 700 }}>Totale: €{totalRejected.toFixed(2)}</span>
+                    {/* Accettate per giorno */}
+                    {completed.length > 0 && (
+                      <div style={{ marginBottom: 20 }}>
+                        <p style={{ color: '#00C896', fontSize: 12, fontWeight: 700, margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: 1 }}>
+                          Accettate — {completed.length} richieste — €{totalCompleted.toFixed(2)}
+                        </p>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                          <thead>
+                            <tr style={{ background: '#1a1a1a' }}>
+                              <th style={thStyle}>Giorno</th>
+                              <th style={thStyle}>N° richieste</th>
+                              <th style={thStyle}>Totale pagato</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {Object.entries(byDay(completed))
+                              .sort((a, b) => parseDay(b[0]) - parseDay(a[0]))
+                              .map(([day, { count, total }]) => (
+                                <tr key={day} style={{ borderBottom: '1px solid #1a1a1a' }}>
+                                  <td style={tdStyle}>{day}</td>
+                                  <td style={tdStyle}>{count}</td>
+                                  <td style={{ ...tdStyle, color: '#00C896', fontWeight: 700 }}>€{total.toFixed(2)}</td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
                       </div>
-                      {rejected.length === 0
-                        ? <p style={{ color: '#444', fontSize: 13 }}>Nessuna</p>
-                        : Object.entries(byDay(rejected))
-                            .sort((a, b) => {
-                              const parse = s => { const [d,m,y] = s.split('/'); return new Date(`${y}-${m}-${d}`); };
-                              return parse(b[0]) - parse(a[0]);
-                            })
-                            .map(([day, list]) => (
-                              <div key={day} style={{ marginBottom: 16 }}>
-                                <p style={{ color: '#666', fontSize: 12, margin: '0 0 6px', fontWeight: 600 }}>{day}</p>
-                                <CashoutTable list={list} />
-                              </div>
-                            ))
-                      }
-                    </div>
+                    )}
+
+                    {/* Rifiutate per giorno */}
+                    {rejected.length > 0 && (
+                      <div>
+                        <p style={{ color: '#FF3B30', fontSize: 12, fontWeight: 700, margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: 1 }}>
+                          Rifiutate — {rejected.length} richieste — €{totalRejected.toFixed(2)}
+                        </p>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                          <thead>
+                            <tr style={{ background: '#1a1a1a' }}>
+                              <th style={thStyle}>Giorno</th>
+                              <th style={thStyle}>N° richieste</th>
+                              <th style={thStyle}>Totale rifiutato</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {Object.entries(byDay(rejected))
+                              .sort((a, b) => parseDay(b[0]) - parseDay(a[0]))
+                              .map(([day, { count, total }]) => (
+                                <tr key={day} style={{ borderBottom: '1px solid #1a1a1a' }}>
+                                  <td style={tdStyle}>{day}</td>
+                                  <td style={tdStyle}>{count}</td>
+                                  <td style={{ ...tdStyle, color: '#FF3B30', fontWeight: 700 }}>€{total.toFixed(2)}</td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -294,41 +297,30 @@ export default function AdminPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ background: '#1a1a1a' }}>
-                  {['Utente', 'Monete', 'Importo', 'Status', 'Data', 'Azioni'].map(h => (
+                  {['Artist ID', 'Monete', 'Importo', 'Data richiesta', 'Azioni'].map(h => (
                     <th key={h} style={thStyle}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {cashouts.map(c => (
+                {cashouts.filter(c => c.status === 'pending').map(c => (
                   <tr key={c.id} style={{ borderBottom: '1px solid #1a1a1a' }}>
-                    <td style={tdStyle}>
-                      <div style={{ fontWeight: 600 }}>{c.artist_id?.slice(0, 8) || '—'}</div>
-                    </td>
+                    <td style={{ ...tdStyle, fontSize: 11, color: '#888' }}>{c.artist_id?.slice(0, 12)}…</td>
                     <td style={tdStyle}>🪙 {c.coins_redeemed}</td>
-                    <td style={tdStyle}>€{c.net_euros?.toFixed(2)}</td>
-                    <td style={tdStyle}>
-                      <span style={statusBadge(c.status)}>{c.status}</span>
-                    </td>
+                    <td style={{ ...tdStyle, fontWeight: 700, color: '#00C896' }}>€{Number(c.net_euros || 0).toFixed(2)}</td>
                     <td style={{ ...tdStyle, color: '#555' }}>
                       {c.created_at ? new Date(c.created_at).toLocaleDateString('it-IT') : '—'}
                     </td>
                     <td style={tdStyle}>
-                      {c.status === 'pending' && (
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <button onClick={() => handleCashout(c.id, 'approve')} style={btnApprove}>
-                            ✓ Approva
-                          </button>
-                          <button onClick={() => handleCashout(c.id, 'reject')} style={btnReject}>
-                            ✗ Rifiuta
-                          </button>
-                        </div>
-                      )}
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button onClick={() => handleCashout(c.id, 'approve')} style={btnApprove}>✓ Approva</button>
+                        <button onClick={() => handleCashout(c.id, 'reject')} style={btnReject}>✗ Rifiuta</button>
+                      </div>
                     </td>
                   </tr>
                 ))}
-                {cashouts.length === 0 && (
-                  <tr><td colSpan={6} style={{ ...tdStyle, textAlign: 'center', color: '#444', padding: 32 }}>Nessuna richiesta</td></tr>
+                {cashouts.filter(c => c.status === 'pending').length === 0 && (
+                  <tr><td colSpan={5} style={{ ...tdStyle, textAlign: 'center', color: '#444', padding: 32 }}>Nessuna richiesta in attesa</td></tr>
                 )}
               </tbody>
             </table>
