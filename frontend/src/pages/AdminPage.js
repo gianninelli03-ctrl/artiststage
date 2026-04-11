@@ -45,7 +45,7 @@ export default function AdminPage() {
     ] = await Promise.all([
       supabase.from('profiles').select('*', { count: 'exact' }).order('created_at', { ascending: false }).limit(50),
       supabase.from('coin_purchases').select('*').order('created_at', { ascending: false }).limit(50),
-      supabase.from('cashout_requests').select('*').order('created_at', { ascending: false }),
+      supabase.from('cashout_requests').select('*'),
     ]);
 
     console.log('profilesData', profilesData);
