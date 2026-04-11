@@ -33,6 +33,7 @@ export default function Navbar() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifications, setNotifications] = useState([]);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const notifRef = useRef(null);
 
   // ── Messaggi non letti ────────────────────────────────────
@@ -87,6 +88,25 @@ export default function Navbar() {
       .subscribe();
 
     return () => supabase.removeChannel(channel);
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setIsAdmin(false);
+      return;
+    }
+
+    const loadAdminStatus = async () => {
+      const { data, error } = await supabase
+        .from('admin_users')
+        .select('user_id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      setIsAdmin(Boolean(data) && !error);
+    };
+
+    loadAdminStatus();
   }, [user?.id]);
 
   // Chiudi notifiche cliccando fuori
@@ -290,6 +310,11 @@ export default function Navbar() {
                       )}
                     </div>
                   </DropdownMenuItem>
+                  {isAdmin && (
+                    <DropdownMenuItem onClick={() => navigate('/admin')} className="cursor-pointer hover:bg-zinc-800">
+                      <User className="mr-2 h-4 w-4" />Admin Panel
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem onClick={() => navigate('/pricing')} className="cursor-pointer hover:bg-zinc-800">
   Piano & Pricing
 </DropdownMenuItem>

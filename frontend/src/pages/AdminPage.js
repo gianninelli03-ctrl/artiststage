@@ -4,8 +4,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../supabaseClient';
 import { toast } from 'sonner';
 
-const ADMIN_EMAIL = 'gianninelli03@gmail.com';
-
 export default function AdminPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -19,8 +17,24 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (user === undefined) return;
-    if (!user || user.email !== ADMIN_EMAIL) { navigate('/'); return; }
-    loadAll();
+    if (!user) { navigate('/'); return; }
+
+    const checkAdminAccess = async () => {
+      const { data, error } = await supabase
+        .from('admin_users')
+        .select('user_id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (error || !data) {
+        navigate('/');
+        return;
+      }
+
+      loadAll();
+    };
+
+    checkAdminAccess();
   }, [user]);
 
   const loadAll = async () => {
