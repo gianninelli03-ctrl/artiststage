@@ -9,6 +9,7 @@ const COIN_TO_EUR = 0.014;
 const PLATFORM_FEE = 0.30;
 const NET_MULTIPLIER = COIN_TO_EUR * (1 - PLATFORM_FEE); // 0.0098 €/moneta
 const MIN_PAYOUT_EUR = 20;
+const MIN_CASHOUT_COINS = 1000;
 
 export default function CashoutPage() {
   const { user } = useAuth();
@@ -19,9 +20,11 @@ export default function CashoutPage() {
   const [loading, setLoading] = useState(true);
   const [requesting, setRequesting] = useState(false);
   const [pendingRequests, setPendingRequests] = useState([]);
+  const [redeemCoins, setRedeemCoins] = useState(0);
 
-  const netValue = balance !== null ? balance * NET_MULTIPLIER : 0;
-  const canCashout = netValue >= MIN_PAYOUT_EUR;
+  const coinsToRedeem = Math.min(Math.max(Number(redeemCoins) || 0, 0), balance ?? 0);
+  const netValue = coinsToRedeem * NET_MULTIPLIER;
+  const canCashout = coinsToRedeem >= MIN_CASHOUT_COINS && netValue >= MIN_PAYOUT_EUR;
 
   useEffect(() => {
     if (!user?.id) return;
@@ -39,6 +42,7 @@ export default function CashoutPage() {
       if (!artist) { navigate('/dashboard'); return; }
       setIsArtist(true);
       setBalance(bal?.balance ?? 0);
+      setRedeemCoins(bal?.balance ?? 0);
       setPendingRequests(pending || []);
       setLoading(false);
     };
@@ -49,7 +53,6 @@ export default function CashoutPage() {
     if (!canCashout || requesting) return;
     setRequesting(true);
     try {
-      const coinsToRedeem = balance;
       console.log('CALLING RPC with:', coinsToRedeem);
       const { error: rpcError } = await supabase.rpc('create_cashout_request', {
         coins_amount: coinsToRedeem,
@@ -114,10 +117,39 @@ export default function CashoutPage() {
           {/* Requisito minimo */}
           {!canCashout && (
             <div className="mb-4 p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 text-sm">
-              Minimo €{MIN_PAYOUT_EUR} netti per richiedere il cashout.
-              Mancano ancora €{(MIN_PAYOUT_EUR - netValue).toFixed(2)}.
+              {coinsToRedeem < MIN_CASHOUT_COINS ? (
+                <>Minimo 1000 monete per il cashout.</>
+              ) : (
+                <>
+                  Minimo €{MIN_PAYOUT_EUR} netti per richiedere il cashout.
+                  Mancano ancora €{(MIN_PAYOUT_EUR - netValue).toFixed(2)}.
+                </>
+              )}
             </div>
           )}
+
+          <div className="mb-4">
+            <label className="block text-xs text-zinc-500 uppercase tracking-wider mb-2">
+              Monete da riscattare
+            </label>
+            <input
+              type="number"
+              min="0"
+              max={balance ?? 0}
+              step="1"
+              value={redeemCoins}
+              onChange={(e) => {
+                const value = Number(e.target.value);
+                if (Number.isNaN(value)) {
+                  setRedeemCoins(0);
+                  return;
+                }
+                setRedeemCoins(Math.min(Math.max(value, 0), balance ?? 0));
+              }}
+              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-white outline-none focus:border-zinc-700"
+            />
+            <p className="mt-2 text-sm text-zinc-400">Riceverai: €{netValue.toFixed(2)}</p>
+          </div>
 
           <button
             onClick={handleCashout}

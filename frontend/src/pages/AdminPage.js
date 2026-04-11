@@ -45,7 +45,7 @@ export default function AdminPage() {
     ] = await Promise.all([
       supabase.from('profiles').select('*', { count: 'exact' }).order('created_at', { ascending: false }).limit(50),
       supabase.from('coin_purchases').select('*').order('created_at', { ascending: false }).limit(50),
-      supabase.from('cashout_requests').select('*, profile:profiles(name, email)').order('created_at', { ascending: false }),
+      supabase.from('cashout_requests').select('*, artist:artist_profiles(stage_name)').order('created_at', { ascending: false }),
     ]);
 
     const totalRevenue = (purchasesData || [])
@@ -222,11 +222,11 @@ export default function AdminPage() {
                 {cashouts.map(c => (
                   <tr key={c.id} style={{ borderBottom: '1px solid #1a1a1a' }}>
                     <td style={tdStyle}>
-                      <div style={{ fontWeight: 600 }}>{c.profile?.name || '—'}</div>
-                      <div style={{ color: '#555', fontSize: 11 }}>{c.profile?.email || '—'}</div>
+                      <div style={{ fontWeight: 600 }}>{c.artist?.stage_name || '—'}</div>
+                      <div style={{ color: '#555', fontSize: 11 }}>{c.artist_id || '—'}</div>
                     </td>
-                    <td style={tdStyle}>🪙 {c.coins}</td>
-                    <td style={tdStyle}>€{c.amount_eur?.toFixed(2)}</td>
+                    <td style={tdStyle}>🪙 {c.coins_redeemed}</td>
+                    <td style={tdStyle}>€{c.net_euros?.toFixed(2)}</td>
                     <td style={tdStyle}>
                       <span style={statusBadge(c.status)}>{c.status}</span>
                     </td>
