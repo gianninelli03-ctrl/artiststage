@@ -48,6 +48,10 @@ export default function AdminPage() {
       supabase.from('cashout_requests').select('*').order('created_at', { ascending: false }),
     ]);
 
+    console.log('profilesData', profilesData);
+    console.log('purchasesData', purchasesData);
+    console.log('cashoutsData', cashoutsData);
+
     const totalRevenue = (purchasesData || [])
       .filter(p => p.status === 'completed')
       .reduce((sum, p) => sum + (p.amount_cents || 0), 0);
@@ -209,6 +213,7 @@ export default function AdminPage() {
 
         {/* CASHOUT */}
         {tab === 'cashouts' && (
+          console.log('cashouts state', cashouts),
           <div style={{ background: '#111', border: '1px solid #222', borderRadius: 16, overflow: 'hidden' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
