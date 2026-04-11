@@ -355,13 +355,18 @@ export default function AdminPage() {
           }, {});
 
           const days = Object.keys(byDay).filter(d => d !== '—').sort((a, b) => parseDay(b) - parseDay(a));
-          if (d => d === '—') days.push('—');
+          if (byDay['—']) days.push('—');
 
           if (days.length === 0) return (
             <div style={{ background: '#111', border: '1px solid #222', borderRadius: 16, padding: 32, textAlign: 'center', color: '#444' }}>
               Nessuna richiesta chiusa
             </div>
           );
+
+          const totalCompleted = settled.filter(c => c.status === 'completed');
+          const totalRejected = settled.filter(c => c.status === 'rejected');
+          const totalEurCompleted = totalCompleted.reduce((s, c) => s + (Number(c.net_euros) || 0), 0);
+          const totalEurRejected = totalRejected.reduce((s, c) => s + (Number(c.net_euros) || 0), 0);
 
           const RowItem = ({ c }) => (
             <div style={{ padding: '10px 0', borderBottom: '1px solid #1e1e1e' }}>
@@ -377,6 +382,21 @@ export default function AdminPage() {
 
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+              {/* Riepilogo totale */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div style={{ background: '#00C89611', border: '1px solid #00C89633', borderRadius: 12, padding: '16px 20px' }}>
+                  <p style={{ color: '#00C896', fontSize: 11, fontWeight: 700, margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: 1 }}>Totale accettate</p>
+                  <p style={{ fontSize: 28, fontWeight: 800, color: '#00C896', margin: '0 0 4px' }}>€{totalEurCompleted.toFixed(2)}</p>
+                  <p style={{ color: '#555', fontSize: 12, margin: 0 }}>{totalCompleted.length} richieste</p>
+                </div>
+                <div style={{ background: '#FF3B3011', border: '1px solid #FF3B3033', borderRadius: 12, padding: '16px 20px' }}>
+                  <p style={{ color: '#FF3B30', fontSize: 11, fontWeight: 700, margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: 1 }}>Totale rifiutate</p>
+                  <p style={{ fontSize: 28, fontWeight: 800, color: '#FF3B30', margin: '0 0 4px' }}>€{totalEurRejected.toFixed(2)}</p>
+                  <p style={{ color: '#555', fontSize: 12, margin: 0 }}>{totalRejected.length} richieste</p>
+                </div>
+              </div>
+
               {days.map(day => {
                 const { completed, rejected } = byDay[day] || { completed: [], rejected: [] };
                 return (
