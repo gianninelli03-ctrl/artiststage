@@ -325,14 +325,14 @@ export default function ArtistProfilePage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {artist.portfolio_media.map((media) => (
                       <div key={media.id} className="rounded-xl overflow-hidden border border-zinc-800 bg-zinc-900">
-                        {media.type?.startsWith('image/') ? (
+                        {(media.type?.startsWith('image/') || /\.(jpe?g|png|gif|webp|avif|svg)$/i.test(media.url || '')) ? (
                           <img
                             src={media.url}
                             alt={media.name}
                             className="w-full h-56 object-cover cursor-pointer hover:opacity-90 transition-opacity"
                             onClick={() => setLightboxSrc(media.url)}
                           />
-                        ) : media.type?.startsWith('video/') ? (
+                        ) : (media.type?.startsWith('video/') || /\.(mp4|mov|webm|ogg)$/i.test(media.url || '')) ? (
                           <video controls className="w-full h-56 bg-black" src={media.url} />
                         ) : (
                           <div className="h-56 flex items-center justify-center text-zinc-400 px-4 text-sm">{media.name}</div>
@@ -402,7 +402,7 @@ export default function ArtistProfilePage() {
       {/* ── Lightbox ───────────────────────────────────────── */}
       {lightboxSrc && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 p-4"
           onClick={() => setLightboxSrc(null)}
         >
           <button
