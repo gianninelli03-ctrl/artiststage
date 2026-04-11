@@ -45,7 +45,7 @@ export default function AdminPage() {
     ] = await Promise.all([
       supabase.from('profiles').select('*', { count: 'exact' }).order('created_at', { ascending: false }).limit(50),
       supabase.from('coin_purchases').select('*').order('created_at', { ascending: false }).limit(50),
-      supabase.from('cashout_requests').select('*'),
+      supabase.from('cashout_requests').select('*, user:profiles(name)'),
     ]);
 
     console.log('profilesData', profilesData);
@@ -184,30 +184,150 @@ export default function AdminPage() {
         {/* TRANSAZIONI */}
         {tab === 'purchases' && (
           <div style={{ background: '#111', border: '1px solid #222', borderRadius: 16, overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr style={{ background: '#1a1a1a' }}>
-                  {['User ID', 'Monete', 'Importo', 'Status', 'Data'].map(h => (
-                    <th key={h} style={thStyle}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {purchases.map(p => (
-                  <tr key={p.id} style={{ borderBottom: '1px solid #1a1a1a' }}>
-                    <td style={{ ...tdStyle, color: '#555', fontSize: 11 }}>{p.user_id?.slice(0, 12)}…</td>
-                    <td style={tdStyle}>🪙 {p.coins_received}</td>
-                    <td style={tdStyle}>€{((p.amount_cents || 0) / 100).toFixed(2)}</td>
-                    <td style={tdStyle}>
-                      <span style={statusBadge(p.status)}>{p.status}</span>
-                    </td>
-                    <td style={{ ...tdStyle, color: '#555' }}>
-                      {new Date(p.created_at).toLocaleDateString('it-IT')}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div style={{ padding: 24 }}>
+              {Object.entries(
+                cashouts.reduce((groups, cashout) => {
+                  if (!['completed', 'rejected'].includes(cashout.status)) return groups;
+                  const monthKey = new Date(cashout.created_at).toISOString().slice(0, 7);
+                  if (!groups[monthKey]) groups[monthKey] = [];
+                  groups[monthKey].push(cashout);
+                  return groups;
+                }, {})
+              )
+                .sort((a, b) => b[0].localeCompare(a[0]))
+                .map(([monthKey, monthCashouts]) => {
+                  const completedCashouts = monthCashouts.filter(c => c.status === 'completed');
+                  const rejectedCashouts = monthCashouts.filter(c => c.status === 'rejected');
+                  const completedByDay = completedCashouts.reduce((groups, cashout) => {
+                    const dayKey = new Date(cashout.created_at).toLocaleDateString('it-IT');
+                    if (!groups[dayKey]) groups[dayKey] = [];
+                    groups[dayKey].push(cashout);
+                    return groups;
+                  }, {});
+                  const rejectedByDay = rejectedCashouts.reduce((groups, cashout) => {
+                    const dayKey = new Date(cashout.created_at).toLocaleDateString('it-IT');
+                    if (!groups[dayKey]) groups[dayKey] = [];
+                    groups[dayKey].push(cashout);
+                    return groups;
+                  }, {});
+                  const monthLabel = new Date(`${monthKey}-01T00:00:00`).toLocaleDateString('it-IT', {
+                    month: 'long',
+                    year: 'numeric',
+                  });
+
+                  return (
+                    <div key={monthKey} style={{ marginBottom: 32 }}>
+                      <h2 style={{ fontSize: 22, fontWeight: 800, margin: '0 0 20px', color: '#fff', textTransform: 'capitalize' }}>
+                        {monthLabel}
+                      </h2>
+
+                      <h3 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 16px', color: '#fff' }}>Pagate</h3>
+                      <p style={{ color: '#00C896', fontSize: 14, fontWeight: 700, margin: '0 0 16px' }}>
+                        Totale pagate: €
+                        {completedCashouts
+                          .reduce((sum, c) => sum + (c.net_euros || 0), 0)
+                          .toFixed(2)}
+                      </p>
+              {completedCashouts.length === 0 ? (
+                <p style={{ ...tdStyle, color: '#444', padding: 0, margin: '0 0 24px' }}>Nessuna richiesta pagata</p>
+              ) : (
+                Object.entries(completedByDay)
+                  .sort((a, b) => {
+                    const [dayA, monthA, yearA] = a[0].split('/');
+                    const [dayB, monthB, yearB] = b[0].split('/');
+                    return new Date(`${yearB}-${monthB}-${dayB}`).getTime() - new Date(`${yearA}-${monthA}-${dayA}`).getTime();
+                  })
+                  .map(([dayKey, dayCashouts]) => (
+                    <div key={`completed-${dayKey}`} style={{ marginBottom: 24 }}>
+                      <h4 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 12px', color: '#aaa' }}>{dayKey}</h4>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ background: '#1a1a1a' }}>
+                            {['Utente', 'Monete', 'Importo', 'Status', 'Data'].map(h => (
+                              <th key={h} style={thStyle}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {dayCashouts.map(c => (
+                            <tr key={c.id} style={{ borderBottom: '1px solid #1a1a1a' }}>
+                              <td style={tdStyle}>
+                                <div style={{ fontWeight: 600 }}>{c.artist?.stage_name || '—'}</div>
+                                <div style={{ color: '#555', fontSize: 11 }}>
+                                  {c.user?.name || (c.artist_id ? `ID: ${c.artist_id.slice(0, 8)}…${c.artist_id.slice(-4)}` : '—')}
+                                </div>
+                              </td>
+                              <td style={tdStyle}>🪙 {c.coins_redeemed}</td>
+                              <td style={tdStyle}>€{c.net_euros?.toFixed(2)}</td>
+                              <td style={tdStyle}>
+                                <span style={statusBadge(c.status)}>{c.status}</span>
+                              </td>
+                              <td style={{ ...tdStyle, color: '#555' }}>
+                                {new Date(c.created_at).toLocaleDateString('it-IT')}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))
+              )}
+
+                      <h3 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 16px', color: '#fff' }}>Rifiutate</h3>
+                      <p style={{ color: '#FF3B30', fontSize: 14, fontWeight: 700, margin: '0 0 16px' }}>
+                        Totale rifiutate: €
+                        {rejectedCashouts
+                          .reduce((sum, c) => sum + (c.net_euros || 0), 0)
+                          .toFixed(2)}
+                      </p>
+              {rejectedCashouts.length === 0 ? (
+                <p style={{ ...tdStyle, color: '#444', padding: 0, margin: 0 }}>Nessuna richiesta rifiutata</p>
+              ) : (
+                Object.entries(rejectedByDay)
+                  .sort((a, b) => {
+                    const [dayA, monthA, yearA] = a[0].split('/');
+                    const [dayB, monthB, yearB] = b[0].split('/');
+                    return new Date(`${yearB}-${monthB}-${dayB}`).getTime() - new Date(`${yearA}-${monthA}-${dayA}`).getTime();
+                  })
+                  .map(([dayKey, dayCashouts]) => (
+                    <div key={`rejected-${dayKey}`} style={{ marginBottom: 24 }}>
+                      <h4 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 12px', color: '#aaa' }}>{dayKey}</h4>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ background: '#1a1a1a' }}>
+                            {['Utente', 'Monete', 'Importo', 'Status', 'Data'].map(h => (
+                              <th key={h} style={thStyle}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {dayCashouts.map(c => (
+                            <tr key={c.id} style={{ borderBottom: '1px solid #1a1a1a' }}>
+                              <td style={tdStyle}>
+                                <div style={{ fontWeight: 600 }}>{c.artist?.stage_name || '—'}</div>
+                                <div style={{ color: '#555', fontSize: 11 }}>
+                                  {c.user?.name || (c.artist_id ? `ID: ${c.artist_id.slice(0, 8)}…${c.artist_id.slice(-4)}` : '—')}
+                                </div>
+                              </td>
+                              <td style={tdStyle}>🪙 {c.coins_redeemed}</td>
+                              <td style={tdStyle}>€{c.net_euros?.toFixed(2)}</td>
+                              <td style={tdStyle}>
+                                <span style={statusBadge(c.status)}>{c.status}</span>
+                              </td>
+                              <td style={{ ...tdStyle, color: '#555' }}>
+                                {new Date(c.created_at).toLocaleDateString('it-IT')}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))
+              )}
+                    </div>
+                  );
+                })}
+            </div>
           </div>
         )}
 
@@ -224,7 +344,7 @@ export default function AdminPage() {
                 </tr>
               </thead>
               <tbody>
-                {cashouts.map(c => (
+                {cashouts.filter(c => c.status === 'pending').map(c => (
                   <tr key={c.id} style={{ borderBottom: '1px solid #1a1a1a' }}>
                     <td style={tdStyle}>
                       <div style={{ fontWeight: 600 }}>{c.artist?.stage_name || '—'}</div>
@@ -252,7 +372,7 @@ export default function AdminPage() {
                     </td>
                   </tr>
                 ))}
-                {cashouts.length === 0 && (
+                {cashouts.filter(c => c.status === 'pending').length === 0 && (
                   <tr><td colSpan={6} style={{ ...tdStyle, textAlign: 'center', color: '#444', padding: 32 }}>Nessuna richiesta</td></tr>
                 )}
               </tbody>
