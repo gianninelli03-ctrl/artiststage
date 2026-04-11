@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import { useAuth } from '../contexts/AuthContext';
@@ -7,7 +7,8 @@ import ArtistCalendar from '../components/ArtistCalendar';
 import {
   MapPin, Star, Clock, CurrencyDollar, Envelope,
   InstagramLogo, YoutubeLogo, TiktokLogo, Globe,
-  Play, Broadcast, ArrowLeft, Heart, UserPlus
+  Play, Broadcast, ArrowLeft, Heart, UserPlus,
+  CaretLeft, CaretRight, X as XIcon
 } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
@@ -24,7 +25,7 @@ export default function ArtistProfilePage() {
   const [artist, setArtist] = useState(null);
   const [loading, setLoading] = useState(true);
   const [liked, setLiked] = useState(false);
-  const [lightboxSrc, setLightboxSrc] = useState(null);
+  const [lightboxIdx, setLightboxIdx] = useState(null);
   const [likesCount, setLikesCount] = useState(0);
   const [followersCount, setFollowersCount] = useState(0);
   const [following, setFollowing] = useState(false);
@@ -147,6 +148,32 @@ export default function ArtistProfilePage() {
   }
 
   const availability = AVAILABILITY_LABELS[artist.availability] || AVAILABILITY_LABELS.available;
+
+  // Solo le immagini del portfolio, per la navigazione lightbox
+  const mediaImages = (artist.portfolio_media || []).filter(
+    m => m.type?.startsWith('image/') || /\.(jpe?g|png|gif|webp|avif|svg)$/i.test(m.url || '')
+  );
+
+  const openLightbox = (mediaItem) => {
+    const idx = mediaImages.findIndex(m => m.url === mediaItem.url);
+    if (idx !== -1) setLightboxIdx(idx);
+  };
+
+  const closeLightbox = () => setLightboxIdx(null);
+  const prevImage = useCallback(() => setLightboxIdx(i => (i > 0 ? i - 1 : i)), []);
+  const nextImage = useCallback(() => setLightboxIdx(i => (i < mediaImages.length - 1 ? i + 1 : i)), [mediaImages.length]);
+
+  // Keyboard navigation
+  useEffect(() => {
+    if (lightboxIdx === null) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape') closeLightbox();
+      if (e.key === 'ArrowLeft') prevImage();
+      if (e.key === 'ArrowRight') nextImage();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [lightboxIdx, prevImage, nextImage]);
 
   return (
     <div className="min-h-screen bg-[#09090B]">
@@ -330,7 +357,7 @@ export default function ArtistProfilePage() {
                             src={media.url}
                             alt={media.name}
                             className="w-full h-56 object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                            onClick={() => setLightboxSrc(media.url)}
+                            onClick={() => openLightbox(media)}
                           />
                         ) : (media.type?.startsWith('video/') || /\.(mp4|mov|webm|ogg)$/i.test(media.url || '')) ? (
                           <video controls className="w-full h-56 bg-black" src={media.url} />
@@ -400,24 +427,64 @@ export default function ArtistProfilePage() {
       </main>
 
       {/* ── Lightbox ───────────────────────────────────────── */}
-      {lightboxSrc && (
+      {lightboxIdx !== null && mediaImages[lightboxIdx] && (
         <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 p-4"
-          onClick={() => setLightboxSrc(null)}
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/95"
+          onClick={closeLightbox}
         >
+          {/* Chiudi */}
           <button
-            onClick={() => setLightboxSrc(null)}
-            className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+            onClick={closeLightbox}
+            className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors z-10"
             aria-label="Chiudi"
           >
-            ✕
+            <XIcon size={20} />
           </button>
+
+          {/* Contatore */}
+          {mediaImages.length > 1 && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-black/60 text-white text-sm z-10">
+              {lightboxIdx + 1} / {mediaImages.length}
+            </div>
+          )}
+
+          {/* Freccia sinistra */}
+          {lightboxIdx > 0 && (
+            <button
+              onClick={e => { e.stopPropagation(); prevImage(); }}
+              className="absolute left-4 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center rounded-full bg-black/50 hover:bg-black/70 text-white transition-colors z-10"
+              aria-label="Precedente"
+            >
+              <CaretLeft size={24} weight="bold" />
+            </button>
+          )}
+
+          {/* Immagine */}
           <img
-            src={lightboxSrc}
-            alt=""
-            className="max-w-full max-h-[90vh] object-contain rounded-xl shadow-2xl"
+            src={mediaImages[lightboxIdx].url}
+            alt={mediaImages[lightboxIdx].name || ''}
+            className="max-w-full max-h-[90vh] object-contain select-none"
             onClick={e => e.stopPropagation()}
+            draggable={false}
           />
+
+          {/* Freccia destra */}
+          {lightboxIdx < mediaImages.length - 1 && (
+            <button
+              onClick={e => { e.stopPropagation(); nextImage(); }}
+              className="absolute right-4 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center rounded-full bg-black/50 hover:bg-black/70 text-white transition-colors z-10"
+              aria-label="Successiva"
+            >
+              <CaretRight size={24} weight="bold" />
+            </button>
+          )}
+
+          {/* Nome foto */}
+          {mediaImages[lightboxIdx].name && (
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-black/60 text-zinc-300 text-sm max-w-xs truncate">
+              {mediaImages[lightboxIdx].name}
+            </div>
+          )}
         </div>
       )}
     </div>
