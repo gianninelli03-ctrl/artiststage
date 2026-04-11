@@ -48,15 +48,28 @@ export default function AdminPage() {
       supabase.from('cashout_requests').select('*'),
     ]);
 
+    // Carica stage_name per ogni artist_id presente nei cashout
+    let cashoutsWithName = cashoutsData || [];
+    const artistIds = [...new Set((cashoutsData || []).map(c => c.artist_id).filter(Boolean))];
+    if (artistIds.length > 0) {
+      const { data: artistData } = await supabase
+        .from('artist_profiles')
+        .select('user_id, stage_name')
+        .in('user_id', artistIds);
+      const nameMap = {};
+      for (const a of artistData || []) nameMap[a.user_id] = a.stage_name;
+      cashoutsWithName = cashoutsWithName.map(c => ({ ...c, stage_name: nameMap[c.artist_id] || null }));
+    }
+
     const totalRevenue = (purchasesData || [])
       .filter(p => p.status === 'completed')
       .reduce((sum, p) => sum + (p.amount_cents || 0), 0);
 
-    const pendingCashouts = (cashoutsData || []).filter(c => c.status === 'pending').length;
+    const pendingCashouts = cashoutsWithName.filter(c => c.status === 'pending').length;
 
     setUsers(profilesData || []);
     setPurchases(purchasesData || []);
-    setCashouts(cashoutsData || []);
+    setCashouts(cashoutsWithName);
     setStats({ users: usersCount || 0, revenue: totalRevenue, pendingCashouts });
     setLoading(false);
   };
@@ -305,7 +318,7 @@ export default function AdminPage() {
               <tbody>
                 {cashouts.filter(c => c.status === 'pending').map(c => (
                   <tr key={c.id} style={{ borderBottom: '1px solid #1a1a1a' }}>
-                    <td style={{ ...tdStyle, fontSize: 11, color: '#888' }}>{c.artist_id?.slice(0, 12)}…</td>
+                    <td style={{ ...tdStyle, fontSize: 13, color: '#ccc' }}>{c.stage_name || c.artist_id?.slice(0, 10) + '…'}</td>
                     <td style={tdStyle}>🪙 {c.coins_redeemed}</td>
                     <td style={{ ...tdStyle, fontWeight: 700, color: '#00C896' }}>€{Number(c.net_euros || 0).toFixed(2)}</td>
                     <td style={{ ...tdStyle, color: '#555' }}>
@@ -352,7 +365,7 @@ export default function AdminPage() {
 
           const RowItem = ({ c }) => (
             <div style={{ padding: '10px 0', borderBottom: '1px solid #1e1e1e' }}>
-              <div style={{ fontSize: 12, color: '#888', marginBottom: 2 }}>{c.artist_id?.slice(0, 10)}…</div>
+              <div style={{ fontSize: 13, color: '#ccc', fontWeight: 600, marginBottom: 2 }}>{c.stage_name || c.artist_id?.slice(0, 10) + '…'}</div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: 13, color: '#ccc' }}>🪙 {c.coins_redeemed}</span>
                 <span style={{ fontSize: 14, fontWeight: 700, color: c.status === 'completed' ? '#00C896' : '#FF3B30' }}>
