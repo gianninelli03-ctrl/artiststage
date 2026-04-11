@@ -50,9 +50,15 @@ export default function CashoutPage() {
     setRequesting(true);
     try {
       const coinsToRedeem = balance;
+      console.log('CALLING RPC with:', coinsToRedeem);
       const { error: rpcError } = await supabase.rpc('create_cashout_request', {
         coins_amount: coinsToRedeem,
       });
+      console.log('RPC ERROR FULL:', rpcError);
+      console.log('RPC RESPONSE:', { rpcError });
+      if (rpcError) {
+        console.error('RPC FAILED:', rpcError.message, rpcError.details, rpcError.hint);
+      }
       if (rpcError) throw rpcError;
 
       setBalance(0);
