@@ -190,119 +190,33 @@ export default function AdminPage() {
         )}
 
         {/* TRANSAZIONI */}
-        {tab === 'purchases' && (() => {
-          const settled = cashouts.filter(c => ['completed', 'rejected'].includes(c.status));
-          const parseDay = s => { const [d,m,y] = s.split('/'); return new Date(`${y}-${m}-${d}`); };
-
-          // Raggruppa per mese
-          const byMonth = settled.reduce((acc, c) => {
-            const key = c.created_at ? new Date(c.created_at).toISOString().slice(0, 7) : 'unknown';
-            if (!acc[key]) acc[key] = [];
-            acc[key].push(c);
-            return acc;
-          }, {});
-          const months = Object.keys(byMonth).sort((a, b) => b.localeCompare(a));
-
-          if (months.length === 0) return (
-            <div style={{ background: '#111', border: '1px solid #222', borderRadius: 16, padding: 32, textAlign: 'center', color: '#444' }}>
-              Nessuna transazione chiusa
-            </div>
-          );
-
-          return (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-              {months.map(monthKey => {
-                const items = byMonth[monthKey];
-                const completed = items.filter(c => c.status === 'completed');
-                const rejected = items.filter(c => c.status === 'rejected');
-                const totalCompleted = completed.reduce((s, c) => s + (Number(c.net_euros) || 0), 0);
-                const totalRejected = rejected.reduce((s, c) => s + (Number(c.net_euros) || 0), 0);
-                const monthLabel = monthKey === 'unknown' ? 'Data sconosciuta' :
-                  new Date(`${monthKey}-01T00:00:00`).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
-
-                // Raggruppa per giorno
-                const byDay = (list) => list.reduce((acc, c) => {
-                  const day = c.created_at ? new Date(c.created_at).toLocaleDateString('it-IT') : '—';
-                  if (!acc[day]) acc[day] = { count: 0, total: 0 };
-                  acc[day].count += 1;
-                  acc[day].total += Number(c.net_euros) || 0;
-                  return acc;
-                }, {});
-
-                return (
-                  <div key={monthKey} style={{ background: '#111', border: '1px solid #222', borderRadius: 16, padding: 24 }}>
-                    {/* Intestazione mese */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-                      <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0, textTransform: 'capitalize' }}>{monthLabel}</h2>
-                      <div style={{ display: 'flex', gap: 16 }}>
-                        <span style={{ color: '#00C896', fontWeight: 700, fontSize: 13 }}>✓ €{totalCompleted.toFixed(2)}</span>
-                        <span style={{ color: '#FF3B30', fontWeight: 700, fontSize: 13 }}>✗ €{totalRejected.toFixed(2)}</span>
-                      </div>
-                    </div>
-
-                    {/* Accettate per giorno */}
-                    {completed.length > 0 && (
-                      <div style={{ marginBottom: 20 }}>
-                        <p style={{ color: '#00C896', fontSize: 12, fontWeight: 700, margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: 1 }}>
-                          Accettate — {completed.length} richieste — €{totalCompleted.toFixed(2)}
-                        </p>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                          <thead>
-                            <tr style={{ background: '#1a1a1a' }}>
-                              <th style={thStyle}>Giorno</th>
-                              <th style={thStyle}>N° richieste</th>
-                              <th style={thStyle}>Totale pagato</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {Object.entries(byDay(completed))
-                              .sort((a, b) => parseDay(b[0]) - parseDay(a[0]))
-                              .map(([day, { count, total }]) => (
-                                <tr key={day} style={{ borderBottom: '1px solid #1a1a1a' }}>
-                                  <td style={tdStyle}>{day}</td>
-                                  <td style={tdStyle}>{count}</td>
-                                  <td style={{ ...tdStyle, color: '#00C896', fontWeight: 700 }}>€{total.toFixed(2)}</td>
-                                </tr>
-                              ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-
-                    {/* Rifiutate per giorno */}
-                    {rejected.length > 0 && (
-                      <div>
-                        <p style={{ color: '#FF3B30', fontSize: 12, fontWeight: 700, margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: 1 }}>
-                          Rifiutate — {rejected.length} richieste — €{totalRejected.toFixed(2)}
-                        </p>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                          <thead>
-                            <tr style={{ background: '#1a1a1a' }}>
-                              <th style={thStyle}>Giorno</th>
-                              <th style={thStyle}>N° richieste</th>
-                              <th style={thStyle}>Totale rifiutato</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {Object.entries(byDay(rejected))
-                              .sort((a, b) => parseDay(b[0]) - parseDay(a[0]))
-                              .map(([day, { count, total }]) => (
-                                <tr key={day} style={{ borderBottom: '1px solid #1a1a1a' }}>
-                                  <td style={tdStyle}>{day}</td>
-                                  <td style={tdStyle}>{count}</td>
-                                  <td style={{ ...tdStyle, color: '#FF3B30', fontWeight: 700 }}>€{total.toFixed(2)}</td>
-                                </tr>
-                              ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })()}
+        {tab === 'purchases' && (
+          <div style={{ background: '#111', border: '1px solid #222', borderRadius: 16, overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: '#1a1a1a' }}>
+                  {['User ID', 'Monete', 'Importo', 'Status', 'Data'].map(h => (
+                    <th key={h} style={thStyle}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {purchases.length === 0 && (
+                  <tr><td colSpan={5} style={{ ...tdStyle, textAlign: 'center', color: '#444', padding: 32 }}>Nessuna transazione</td></tr>
+                )}
+                {purchases.map(p => (
+                  <tr key={p.id} style={{ borderBottom: '1px solid #1a1a1a' }}>
+                    <td style={{ ...tdStyle, color: '#555', fontSize: 11 }}>{p.user_id?.slice(0, 12)}…</td>
+                    <td style={tdStyle}>🪙 {p.coins_received}</td>
+                    <td style={tdStyle}>€{((p.amount_cents || 0) / 100).toFixed(2)}</td>
+                    <td style={tdStyle}><span style={statusBadge(p.status)}>{p.status}</span></td>
+                    <td style={{ ...tdStyle, color: '#555' }}>{new Date(p.created_at).toLocaleDateString('it-IT')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {/* CASHOUT */}
         {tab === 'cashouts' && (
