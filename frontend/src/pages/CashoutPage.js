@@ -9,7 +9,6 @@ const COIN_TO_EUR = 0.014;
 const PLATFORM_FEE = 0.30;
 const NET_MULTIPLIER = COIN_TO_EUR * (1 - PLATFORM_FEE); // 0.0098 €/moneta
 const MIN_PAYOUT_EUR = 20;
-const MIN_CASHOUT_COINS = 1000;
 
 export default function CashoutPage() {
   const { user } = useAuth();
@@ -20,11 +19,14 @@ export default function CashoutPage() {
   const [loading, setLoading] = useState(true);
   const [requesting, setRequesting] = useState(false);
   const [pendingRequests, setPendingRequests] = useState([]);
-  const [redeemCoins, setRedeemCoins] = useState(0);
+  const [redeemCoins, setRedeemCoins] = useState('');
 
-  const coinsToRedeem = Math.min(Math.max(Number(redeemCoins) || 0, 0), balance ?? 0);
+  const parsedRedeemCoins = redeemCoins === '' ? 0 : Number(redeemCoins);
+  const coinsToRedeem = Number.isFinite(parsedRedeemCoins)
+    ? Math.min(Math.max(parsedRedeemCoins, 0), balance ?? 0)
+    : 0;
   const netValue = coinsToRedeem * NET_MULTIPLIER;
-  const canCashout = coinsToRedeem >= MIN_CASHOUT_COINS && netValue >= MIN_PAYOUT_EUR;
+  const canCashout = netValue >= MIN_PAYOUT_EUR;
 
   useEffect(() => {
     if (!user?.id) return;
@@ -42,7 +44,7 @@ export default function CashoutPage() {
       if (!artist) { navigate('/dashboard'); return; }
       setIsArtist(true);
       setBalance(bal?.balance ?? 0);
-      setRedeemCoins(bal?.balance ?? 0);
+      setRedeemCoins(String(bal?.balance ?? 0));
       setPendingRequests(pending || []);
       setLoading(false);
     };
@@ -117,14 +119,8 @@ export default function CashoutPage() {
           {/* Requisito minimo */}
           {!canCashout && (
             <div className="mb-4 p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 text-sm">
-              {coinsToRedeem < MIN_CASHOUT_COINS ? (
-                <>Minimo 1000 monete per il cashout.</>
-              ) : (
-                <>
-                  Minimo €{MIN_PAYOUT_EUR} netti per richiedere il cashout.
-                  Mancano ancora €{(MIN_PAYOUT_EUR - netValue).toFixed(2)}.
-                </>
-              )}
+              Minimo €{MIN_PAYOUT_EUR} netti per richiedere il cashout.
+              Mancano ancora €{(MIN_PAYOUT_EUR - netValue).toFixed(2)}.
             </div>
           )}
 
@@ -139,12 +135,14 @@ export default function CashoutPage() {
               step="1"
               value={redeemCoins}
               onChange={(e) => {
-                const value = Number(e.target.value);
-                if (Number.isNaN(value)) {
-                  setRedeemCoins(0);
+                const { value } = e.target;
+                if (value === '') {
+                  setRedeemCoins('');
                   return;
                 }
-                setRedeemCoins(Math.min(Math.max(value, 0), balance ?? 0));
+                const numericValue = Number(value);
+                if (Number.isNaN(numericValue)) return;
+                setRedeemCoins(String(Math.min(Math.max(numericValue, 0), balance ?? 0)));
               }}
               className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-white outline-none focus:border-zinc-700"
             />
