@@ -27,7 +27,7 @@ export default function CashoutPage() {
     if (!user?.id) return;
     const load = async () => {
       const [{ data: artist }, { data: bal }, { data: pending }] = await Promise.all([
-        supabase.from('artist_profiles').select('id').eq('artist_id', user.id).maybeSingle(),
+        supabase.from('artist_profiles').select('id').eq('user_id', user.id).maybeSingle(),
         supabase.from('coin_balances').select('balance').eq('user_id', user.id).single(),
         supabase.from('cashout_requests')
           .select('*')
