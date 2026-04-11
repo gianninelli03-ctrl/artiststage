@@ -24,6 +24,7 @@ export default function ArtistProfilePage() {
   const [artist, setArtist] = useState(null);
   const [loading, setLoading] = useState(true);
   const [liked, setLiked] = useState(false);
+  const [lightboxSrc, setLightboxSrc] = useState(null);
   const [likesCount, setLikesCount] = useState(0);
   const [followersCount, setFollowersCount] = useState(0);
   const [following, setFollowing] = useState(false);
@@ -325,7 +326,12 @@ export default function ArtistProfilePage() {
                     {artist.portfolio_media.map((media) => (
                       <div key={media.id} className="rounded-xl overflow-hidden border border-zinc-800 bg-zinc-900">
                         {media.type?.startsWith('image/') ? (
-                          <img src={media.url} alt={media.name} className="w-full h-56 object-cover" />
+                          <img
+                            src={media.url}
+                            alt={media.name}
+                            className="w-full h-56 object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                            onClick={() => setLightboxSrc(media.url)}
+                          />
                         ) : media.type?.startsWith('video/') ? (
                           <video controls className="w-full h-56 bg-black" src={media.url} />
                         ) : (
@@ -392,6 +398,28 @@ export default function ArtistProfilePage() {
           </div>
         </div>
       </main>
+
+      {/* ── Lightbox ───────────────────────────────────────── */}
+      {lightboxSrc && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setLightboxSrc(null)}
+        >
+          <button
+            onClick={() => setLightboxSrc(null)}
+            className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+            aria-label="Chiudi"
+          >
+            ✕
+          </button>
+          <img
+            src={lightboxSrc}
+            alt=""
+            className="max-w-full max-h-[90vh] object-contain rounded-xl shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 }
