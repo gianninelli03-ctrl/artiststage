@@ -708,7 +708,7 @@ export default function LiveStreamPage() {
     <div className="h-screen bg-[#09090B] flex flex-col overflow-hidden">
       <Navbar />
 
-      <main className="flex-1 pt-16 flex flex-col lg:flex-row overflow-hidden h-[calc(100dvh-64px)]">
+      <main className="flex-1 pt-16 flex flex-row overflow-hidden h-[calc(100dvh-64px)]">
 
         {/* ── Area Video ──────────────────────────────────── */}
         <div className="flex-1 relative bg-black flex items-center justify-center">
@@ -800,7 +800,7 @@ export default function LiveStreamPage() {
         </div>
 
         {/* ── Chat + Partecipanti ─────────────────────────── */}
-        <div className="w-full lg:w-80 flex flex-col border-l border-zinc-800 bg-[#09090B]" style={{ maxHeight: 'calc(100vh - 64px)' }}>
+        <div className="w-80 max-w-[42vw] flex flex-col border-l border-zinc-800 bg-[#09090B] h-full">
           <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
             <h2 className="font-bold text-white">Chat live</h2>
             <div className="flex items-center gap-2 text-zinc-400 text-sm">
