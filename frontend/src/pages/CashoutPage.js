@@ -55,21 +55,15 @@ export default function CashoutPage() {
     if (!canCashout || requesting) return;
     setRequesting(true);
     try {
-      console.log('CALLING RPC with:', coinsToRedeem);
       const { error: rpcError } = await supabase.rpc('create_cashout_request', {
         coins_amount: coinsToRedeem,
       });
-      console.log('RPC ERROR FULL:', rpcError);
-      console.log('RPC RESPONSE:', { rpcError });
-      if (rpcError) {
-        console.error('RPC FAILED:', rpcError.message, rpcError.details, rpcError.hint);
-      }
       if (rpcError) throw rpcError;
 
-      setBalance(0);
+      setBalance(prev => Math.max((prev ?? 0) - coinsToRedeem, 0));
       setPendingRequests(prev => [{
-        coins: coinsToRedeem,
-        amount_eur: parseFloat(netValue.toFixed(2)),
+        coins_redeemed: coinsToRedeem,
+        net_euros: parseFloat(netValue.toFixed(2)),
         status: 'pending',
         created_at: new Date().toISOString(),
       }, ...prev]);
@@ -170,7 +164,7 @@ export default function CashoutPage() {
               {pendingRequests.map((req, i) => (
                 <div key={i} className="flex items-center justify-between py-2 border-b border-zinc-800 last:border-0">
                   <div>
-                    <p className="text-sm text-white">🪙 {req.coins} monete → €{req.amount_eur?.toFixed(2)}</p>
+                    <p className="text-sm text-white">🪙 {req.coins_redeemed} monete → €{req.net_euros?.toFixed(2)}</p>
                     <p className="text-xs text-zinc-500">
                       {new Date(req.created_at).toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' })}
                     </p>

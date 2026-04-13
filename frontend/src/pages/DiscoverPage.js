@@ -49,6 +49,7 @@ export default function DiscoverPage() {
       .order('created_at', { ascending: false })
       .range(from, from + PAGE_SIZE - 1);
     if (activeCategory) query = query.eq('category', activeCategory);
+      if (search && search.trim()) query = query.or('stage_name.ilike.%' + search.trim() + '%,bio.ilike.%' + search.trim() + '%');
     if (locationFilter) query = query.ilike('location', `%${locationFilter}%`);
     if (availabilityFilter) query = query.eq('availability', availabilityFilter);
     const { data, error } = await query;
@@ -109,7 +110,7 @@ export default function DiscoverPage() {
   const visible = useMemo(() => {
     return items.filter(a => {
       if (search) {
-        const q = search.toLowerCase();
+        const q = (search || "").toLowerCase().trim();
         const match = a.stage_name?.toLowerCase().includes(q)
           || a.bio?.toLowerCase().includes(q)
           || a.skills?.some(s => s.toLowerCase().includes(q));
@@ -252,7 +253,7 @@ export default function DiscoverPage() {
             <div className="text-center py-20">
               <p className="text-zinc-500 mb-2 text-lg">Nessun artista trovato</p>
               <p className="text-zinc-600 text-sm mb-6">
-                {items.length === 0
+                {items.length === 0 && (!search || !search.trim())
                   ? 'Non ci sono ancora profili. Creane uno dalla Dashboard!'
                   : 'Prova a cambiare i filtri'}
               </p>

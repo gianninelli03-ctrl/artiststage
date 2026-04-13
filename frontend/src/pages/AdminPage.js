@@ -13,6 +13,7 @@ export default function AdminPage() {
   const [purchases, setPurchases] = useState([]);
   const [cashouts, setCashouts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [processingCashoutId, setProcessingCashoutId] = useState(null);
   const [tab, setTab] = useState('stats');
 
   useEffect(() => {
@@ -75,6 +76,8 @@ export default function AdminPage() {
   };
 
   const handleCashout = async (id, action) => {
+    if (processingCashoutId) return;
+    setProcessingCashoutId(id);
     const newStatus = action === 'approve' ? 'completed' : 'rejected';
     const cashout = cashouts.find(c => c.id === id);
 
@@ -82,7 +85,7 @@ export default function AdminPage() {
       .from('cashout_requests')
       .update({ status: newStatus })
       .eq('id', id);
-    if (error) { toast.error('Errore aggiornamento'); return; }
+    if (error) { toast.error('Errore aggiornamento'); setProcessingCashoutId(null); return; }
     toast.success(action === 'approve' ? 'Approvato' : 'Rifiutato');
     setCashouts(prev => prev.map(c => c.id === id ? { ...c, status: newStatus } : c));
     setStats(prev => ({ ...prev, pendingCashouts: prev.pendingCashouts - 1 }));
@@ -100,7 +103,7 @@ export default function AdminPage() {
             }
           },
           headers: { Authorization: `Bearer ${sessionData.session.access_token}` }
-        }).catch(() => {});
+        }).catch(() => {}).finally(() => setProcessingCashoutId(null));
       }
     }
   };
@@ -321,8 +324,8 @@ export default function AdminPage() {
                     </td>
                     <td style={tdStyle}>
                       <div style={{ display: 'flex', gap: 6 }}>
-                        <button onClick={() => handleCashout(c.id, 'approve')} style={btnApprove}>✓ Approva</button>
-                        <button onClick={() => handleCashout(c.id, 'reject')} style={btnReject}>✗ Rifiuta</button>
+                        <button onClick={() => handleCashout(c.id, 'approve')} disabled={processingCashoutId !== null} style={btnApprove}>✓ Approva</button>
+                        <button onClick={() => handleCashout(c.id, 'reject')} disabled={processingCashoutId !== null} style={btnReject}>✗ Rifiuta</button>
                       </div>
                     </td>
                   </tr>

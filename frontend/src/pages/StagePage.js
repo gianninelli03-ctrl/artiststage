@@ -92,7 +92,7 @@ export default function StagePage() {
   const visible = useMemo(() => {
     return items.filter(v => {
       if (search) {
-        const q = search.toLowerCase();
+        const q = (search || "").toLowerCase().trim();
         if (!v.name?.toLowerCase().includes(q) && !v.bio?.toLowerCase().includes(q)) return false;
       }
       if (onlineFilter === 'online' && !onlineUserIds.has(v.user_id)) return false;

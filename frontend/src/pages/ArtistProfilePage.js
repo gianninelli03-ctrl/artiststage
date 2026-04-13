@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import { useAuth } from '../contexts/AuthContext';
@@ -124,6 +124,25 @@ export default function ArtistProfilePage() {
     }
   };
 
+  // Hooks che devono stare PRIMA degli early return (Rules of Hooks)
+  const touchStartX = useRef(null);
+  const mediaImages = (artist?.portfolio_media || []).filter(
+    m => m.type?.startsWith('image/') || /\.(jpe?g|png|gif|webp|avif|svg)$/i.test(m.url || '')
+  );
+  const prevImage = useCallback(() => setLightboxIdx(i => (i > 0 ? i - 1 : i)), []);
+  const nextImage = useCallback(() => setLightboxIdx(i => (i < mediaImages.length - 1 ? i + 1 : i)), [mediaImages.length]);
+
+  useEffect(() => {
+    if (lightboxIdx === null) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape') setLightboxIdx(null);
+      if (e.key === 'ArrowLeft') prevImage();
+      if (e.key === 'ArrowRight') nextImage();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [lightboxIdx, prevImage, nextImage]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#09090B]">
@@ -149,31 +168,7 @@ export default function ArtistProfilePage() {
 
   const availability = AVAILABILITY_LABELS[artist.availability] || AVAILABILITY_LABELS.available;
 
-  // Solo le immagini del portfolio, per la navigazione lightbox
-  const mediaImages = (artist.portfolio_media || []).filter(
-    m => m.type?.startsWith('image/') || /\.(jpe?g|png|gif|webp|avif|svg)$/i.test(m.url || '')
-  );
-
-  const openLightbox = (mediaItem) => {
-    const idx = mediaImages.findIndex(m => m.url === mediaItem.url);
-    if (idx !== -1) setLightboxIdx(idx);
-  };
-
   const closeLightbox = () => setLightboxIdx(null);
-  const prevImage = useCallback(() => setLightboxIdx(i => (i > 0 ? i - 1 : i)), []);
-  const nextImage = useCallback(() => setLightboxIdx(i => (i < mediaImages.length - 1 ? i + 1 : i)), [mediaImages.length]);
-
-  // Keyboard navigation
-  useEffect(() => {
-    if (lightboxIdx === null) return;
-    const onKey = (e) => {
-      if (e.key === 'Escape') closeLightbox();
-      if (e.key === 'ArrowLeft') prevImage();
-      if (e.key === 'ArrowRight') nextImage();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [lightboxIdx, prevImage, nextImage]);
 
   return (
     <div className="min-h-screen bg-[#09090B]">
@@ -350,14 +345,17 @@ export default function ArtistProfilePage() {
                 <div className="card p-6">
                   <h2 className="text-lg font-bold mb-4 text-white">Foto e Video</h2>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {artist.portfolio_media.map((media) => (
+                    {artist.portfolio_media.map((media) => {
+                      const isImg = media.type?.startsWith('image/') || /\.(jpe?g|png|gif|webp|avif|svg)$/i.test(media.url || '');
+                      const imgIdx = isImg ? mediaImages.indexOf(media) : -1;
+                      return (
                       <div key={media.id} className="rounded-xl overflow-hidden border border-zinc-800 bg-zinc-900">
-                        {(media.type?.startsWith('image/') || /\.(jpe?g|png|gif|webp|avif|svg)$/i.test(media.url || '')) ? (
+                        {isImg ? (
                           <img
                             src={media.url}
                             alt={media.name}
                             className="w-full h-56 object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                            onClick={() => openLightbox(media)}
+                            onClick={() => imgIdx !== -1 && setLightboxIdx(imgIdx)}
                           />
                         ) : (media.type?.startsWith('video/') || /\.(mp4|mov|webm|ogg)$/i.test(media.url || '')) ? (
                           <video controls className="w-full h-56 bg-black" src={media.url} />
@@ -368,7 +366,8 @@ export default function ArtistProfilePage() {
                           <p className="text-sm text-zinc-200 truncate">{media.name}</p>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -431,6 +430,14 @@ export default function ArtistProfilePage() {
         <div
           className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/95"
           onClick={closeLightbox}
+          onTouchStart={e => { touchStartX.current = e.touches[0].clientX; }}
+          onTouchEnd={e => {
+            if (touchStartX.current === null) return;
+            const dx = e.changedTouches[0].clientX - touchStartX.current;
+            if (dx > 50) prevImage();
+            else if (dx < -50) nextImage();
+            touchStartX.current = null;
+          }}
         >
           {/* Chiudi */}
           <button

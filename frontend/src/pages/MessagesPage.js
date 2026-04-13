@@ -33,6 +33,7 @@ export default function MessagesPage() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [sending, setSending] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [unreadCounts, setUnreadCounts] = useState({});
@@ -41,8 +42,10 @@ export default function MessagesPage() {
   const channelRef = useRef(null);
 
   const loadConversations = useCallback(async () => {
+  setLoadError("");
     if (!user?.id) return;
     try {
+      setLoadError('');
       // Carica le conversazioni eliminate dall'utente
       const { data: deleted } = await supabase
         .from('deleted_conversations')
@@ -96,7 +99,8 @@ export default function MessagesPage() {
       for (const c of convList) counts[c.userId] = c.unread;
       setUnreadCounts(counts);
     } catch (e) {
-      console.error(e);
+      console.error(e); setLoadError(e.message || "Errore caricamento messaggi");
+      setLoadError('Errore nel caricamento chat');
     }
   }, [user?.id]);
 
@@ -140,7 +144,7 @@ export default function MessagesPage() {
       setConversations(prev =>
         prev.map(c => c.userId === otherId ? { ...c, unread: 0 } : c)
       );
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error(e); setLoadError(e.message || "Errore caricamento messaggi"); }
   }, [user?.id]);
 
   useEffect(() => {
@@ -242,7 +246,7 @@ export default function MessagesPage() {
       });
 
       loadConversations();
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error(e); setLoadError(e.message || "Errore caricamento messaggi"); }
     finally { setSending(false); }
   };
 
@@ -262,7 +266,7 @@ export default function MessagesPage() {
         return next;
       });
       setSelectedUser(null);
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error(e); setLoadError(e.message || "Errore caricamento messaggi"); }
     finally { setDeletingConv(false); }
   };
 
@@ -316,7 +320,11 @@ export default function MessagesPage() {
             </div>
 
             <div className="flex-1 overflow-y-auto">
-              {filtered.length === 0 ? (
+              {loadError ? (
+                <div className="p-8 text-center text-zinc-500">
+                  <p>{loadError}</p>
+                </div>
+              ) : filtered.length === 0 ? (
                 <div className="p-8 text-center text-zinc-500">
                   <p>Nessuna conversazione</p>
                   <Link to="/discover" className="text-[#FF007A] text-sm mt-2 inline-block">
