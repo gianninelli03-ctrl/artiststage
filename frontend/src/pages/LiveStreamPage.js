@@ -132,6 +132,39 @@ export default function LiveStreamPage() {
       filter: `live_id=eq.${streamId}`
     }, payload => setMessages(prev => [...prev, payload.new]));
 
+    channelRef.current.on('postgres_changes', {
+      event: 'INSERT', schema: 'public', table: 'coin_transactions',
+      filter: `live_id=eq.${streamId}`
+    }, async (payload) => {
+      const senderId = payload.new?.user_id;
+      const coins = payload.new?.amount;
+
+      let senderName = 'Un utente';
+      if (senderId) {
+        const [{ data: artist }, { data: visitor }] = await Promise.all([
+          supabase
+            .from('artist_profiles')
+            .select('stage_name')
+            .eq('user_id', senderId)
+            .maybeSingle(),
+          supabase
+            .from('visitor_profiles')
+            .select('name')
+            .eq('user_id', senderId)
+            .maybeSingle()
+        ]);
+
+        senderName = artist?.stage_name || visitor?.name || senderName;
+      }
+
+      setMessages(prev => [...prev, {
+        id: `coin-${payload.new?.id ?? Date.now()}`,
+        user_name: 'System',
+        user_image: null,
+        content: `💰 ${senderName} ha inviato ${coins} monete`
+      }]);
+    });
+
     channelRef.current.on('broadcast', { event: 'signal' }, ({ payload }) => {
       handleSignalRef.current?.(payload);
     });
