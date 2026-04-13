@@ -565,12 +565,12 @@ export default function LiveStreamPage() {
     setSendingCoins(true);
     setCoinError('');
     try {
-      const { error: txError } = await supabase.from('coin_transactions').insert({
-        user_id: user.id, recipient_id: stream?.artist?.user_id, amount: n, type: 'tip', live_id: streamId,
+      const { error } = await supabase.rpc('send_coins', {
+        p_recipient_id: stream?.artist?.user_id,
+        p_amount: n,
+        p_live_id: streamId
       });
-      if (txError) throw txError;
-      const { error: balError } = await supabase.from('coin_balances').update({ balance: coinBalance - n }).eq('user_id', user.id);
-      if (balError) throw balError;
+      if (error) throw error;
       setCoinBalance(prev => prev - n);
       setCoinAmount('');
       toast.success(`🪙 ${n} monete inviate!`);
