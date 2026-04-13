@@ -136,8 +136,8 @@ export default function LiveStreamPage() {
       event: 'INSERT', schema: 'public', table: 'coin_transactions',
       filter: `live_id=eq.${streamId}`
     }, async (payload) => {
-      const senderId = payload.new?.user_id;
-      const coins = payload.new?.amount;
+      const senderId = payload.new?.from_user;
+      const coins = payload.new?.coins;
 
       let senderName = 'Un utente';
       if (senderId) {
