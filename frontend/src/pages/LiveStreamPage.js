@@ -136,6 +136,13 @@ export default function LiveStreamPage() {
     }, payload => setMessages(prev => [...prev, payload.new]));
 
     channelRef.current.on('postgres_changes', {
+      event: 'UPDATE', schema: 'public', table: 'live_streams',
+      filter: `id=eq.${streamId}`
+    }, payload => {
+      setLikes(payload.new?.likes_count ?? 0);
+    });
+
+    channelRef.current.on('postgres_changes', {
       event: 'INSERT', schema: 'public', table: 'coin_transactions',
       filter: `live_id=eq.${streamId}`
     }, async (payload) => {
@@ -698,10 +705,10 @@ export default function LiveStreamPage() {
   );
 
   return (
-    <div className="min-h-screen bg-[#09090B] flex flex-col">
+    <div className="h-screen bg-[#09090B] flex flex-col overflow-hidden">
       <Navbar />
 
-      <main className="flex-1 pt-16 flex flex-col lg:flex-row overflow-hidden" style={{ height: 'calc(100vh - 64px)' }}>
+      <main className="flex-1 pt-16 flex flex-col lg:flex-row overflow-hidden h-[calc(100dvh-64px)]">
 
         {/* ── Area Video ──────────────────────────────────── */}
         <div className="flex-1 relative bg-black flex items-center justify-center">
