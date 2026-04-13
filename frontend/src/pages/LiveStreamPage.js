@@ -6,7 +6,8 @@ import { supabase } from '../supabaseClient';
 import {
   Broadcast, MicrophoneSlash, Microphone,
   VideoCamera, VideoCameraSlash, PhoneDisconnect,
-  PaperPlaneTilt, Heart, Users, UserPlus, Check, X
+  PaperPlaneTilt, Heart, Users, UserPlus, Check, X,
+  CaretDown
 } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
@@ -44,6 +45,8 @@ export default function LiveStreamPage() {
   const [likes, setLikes] = useState(0);
   const [viewerCount, setViewerCount] = useState(0);
   const [showLikeAnim, setShowLikeAnim] = useState(false);
+  const [coHostUser, setCoHostUser] = useState(null);      // { user_id, name, image } del co-host attivo
+  const [participantsOpen, setParticipantsOpen] = useState(true);
   const [coinBalance, setCoinBalance] = useState(null);
   const [coinAmount, setCoinAmount] = useState('');
   const [sendingCoins, setSendingCoins] = useState(false);
@@ -55,7 +58,6 @@ export default function LiveStreamPage() {
   const [coHostStatus, setCoHostStatus] = useState(null);   // null | 'pending' | 'accepted' (lato viewer)
   const [isCoHost, setIsCoHost] = useState(false);          // viewer diventato co-host
   const [coHostConnected, setCoHostConnected] = useState(false); // artista vede il video co-host
-  const [showRequestsPanel, setShowRequestsPanel] = useState(false);
   const [presenceList, setPresenceList] = useState([]);      // lista spettatori da presence
 
   // ── Refs WebRTC base ──────────────────────────────────────
@@ -77,6 +79,7 @@ export default function LiveStreamPage() {
   const coHostRemoteVideoRef = useRef(null);  // video co-host visto dall'artista (PiP)
   const startCoHostRef = useRef(null);        // ref a startCoHost per evitare stale closure
   const streamRef = useRef(null);             // ref a stream per usarlo in handleSignal
+  const presenceListRef = useRef([]);         // ref a presenceList per accesso nelle closure
 
   // Tieni streamRef aggiornato
   useEffect(() => { streamRef.current = stream; }, [stream]);
@@ -174,6 +177,7 @@ export default function LiveStreamPage() {
       const viewers = Object.values(state).flat();
       setViewerCount(viewers.length);
       setPresenceList(viewers);
+      presenceListRef.current = viewers;
       supabase.from('live_streams').update({ viewer_count: viewers.length }).eq('id', streamId);
     });
 
@@ -305,12 +309,19 @@ export default function LiveStreamPage() {
       if (payload.type === 'cohost-request') {
         const req = { viewerId: payload.viewerId, viewerName: payload.viewerName, viewerImage: payload.viewerImage };
         setCoHostRequests(prev => prev.find(r => r.viewerId === payload.viewerId) ? prev : [...prev, req]);
-        setShowRequestsPanel(true);
         toast(`🎤 ${payload.viewerName} vuole salire in live`);
       }
 
       // ── Co-host: artista riceve offer dal co-host ─────────
       if (payload.type === 'cohost-offer') {
+        // Salva l'identità del co-host (per il flusso invito, dove acceptRequest non viene chiamato)
+        if (!coHostUser) {
+          const fromPresence = presenceListRef.current.find(v => v.user_id === payload.viewerId);
+          if (fromPresence) {
+            setCoHostUser({ user_id: payload.viewerId, name: fromPresence.name, image: fromPresence.image });
+          }
+        }
+
         coHostPCRef.current?.close();
         const pc = new RTCPeerConnection(ICE_SERVERS);
         coHostPCRef.current = pc;
@@ -322,6 +333,7 @@ export default function LiveStreamPage() {
         pc.onconnectionstatechange = () => {
           if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
             setCoHostConnected(false);
+            setCoHostUser(null);
           }
         };
         pc.onicecandidate = ({ candidate }) => {
@@ -352,6 +364,7 @@ export default function LiveStreamPage() {
         coHostPCRef.current = null;
         if (coHostRemoteVideoRef.current) coHostRemoteVideoRef.current.srcObject = null;
         setCoHostConnected(false);
+        setCoHostUser(null);
         toast(`Il co-host ha lasciato la live`);
       }
 
@@ -487,6 +500,8 @@ export default function LiveStreamPage() {
 
   // Artista accetta richiesta
   const acceptRequest = (viewerId) => {
+    const req = coHostRequests.find(r => r.viewerId === viewerId);
+    if (req) setCoHostUser({ user_id: viewerId, name: req.viewerName, image: req.viewerImage });
     channelRef.current?.send({
       type: 'broadcast', event: 'signal',
       payload: { type: 'cohost-accept', viewerId }
@@ -522,6 +537,7 @@ export default function LiveStreamPage() {
     setIsCoHost(false);
     setCoHostStatus(null);
     setCoHostConnected(false);
+    setCoHostUser(null);
     channelRef.current?.send({
       type: 'broadcast', event: 'signal',
       payload: { type: 'cohost-leave', viewerId: user?.id }
@@ -547,6 +563,7 @@ export default function LiveStreamPage() {
       localStreamRef.current?.getTracks().forEach(t => t.stop());
       Object.values(peerConnectionsRef.current).forEach(pc => pc.close());
       coHostPCRef.current?.close();
+      setCoHostUser(null);
       await Promise.all([
         supabase.from('live_streams').update({ is_active: false, ended_at: new Date().toISOString() }).eq('id', streamId),
         supabase.from('artist_profiles').update({ is_live: false }).eq('user_id', user.id)
@@ -581,7 +598,7 @@ export default function LiveStreamPage() {
     setLikes(newLikes);
     setShowLikeAnim(true);
     setTimeout(() => setShowLikeAnim(false), 1000);
-    await supabase.from('live_streams').update({ likes_count: newLikes }).eq('id', streamId);
+    await supabase.rpc('increment_likes', { stream_id: streamId });
   };
 
   // ── Saldo monete ──────────────────────────────────────────
@@ -674,8 +691,11 @@ export default function LiveStreamPage() {
     </div>
   );
 
-  // Viewer della presence list (esclude l'artista stesso)
-  const invitableViewers = presenceList.filter(v => v.user_id !== user?.id);
+  // Viewer della presence list: esclude l'artista e l'eventuale co-host già attivo
+  const invitableViewers = presenceList.filter(v =>
+    v.user_id !== user?.id &&
+    !(coHostConnected && coHostUser?.user_id === v.user_id)
+  );
 
   return (
     <div className="min-h-screen bg-[#09090B] flex flex-col">
@@ -760,19 +780,6 @@ export default function LiveStreamPage() {
                 className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${camOn ? 'bg-zinc-800 hover:bg-zinc-700' : 'bg-red-500'}`}>
                 {camOn ? <VideoCamera size={20} className="text-white" /> : <VideoCameraSlash size={20} className="text-white" />}
               </button>
-              {/* Bottone co-host con badge */}
-              <button
-                onClick={() => setShowRequestsPanel(p => !p)}
-                className="relative w-12 h-12 rounded-full bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-colors"
-                title="Richieste co-host"
-              >
-                <UserPlus size={20} className="text-white" />
-                {coHostRequests.length > 0 && (
-                  <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-[#FF007A] text-white text-[10px] font-bold flex items-center justify-center">
-                    {coHostRequests.length}
-                  </span>
-                )}
-              </button>
             </div>
           )}
 
@@ -783,85 +790,9 @@ export default function LiveStreamPage() {
             </div>
           )}
 
-          {/* ── Pannello richieste co-host (artista) ────────── */}
-          {showRequestsPanel && isArtist && (
-            <div className="absolute inset-0 bg-black/70 z-30 flex items-center justify-center p-4">
-              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-sm max-h-[70vh] flex flex-col">
-                <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
-                  <h3 className="font-bold text-white">Co-host</h3>
-                  <button onClick={() => setShowRequestsPanel(false)}
-                    className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors">
-                    <X size={18} />
-                  </button>
-                </div>
-
-                <div className="overflow-y-auto flex-1 p-4 space-y-5">
-                  {/* Richieste in attesa */}
-                  {coHostRequests.length > 0 && (
-                    <div>
-                      <p className="text-xs font-semibold text-[#FF007A] uppercase tracking-wider mb-2">
-                        Richieste ({coHostRequests.length})
-                      </p>
-                      <div className="space-y-2">
-                        {coHostRequests.map(req => (
-                          <div key={req.viewerId} className="flex items-center gap-3 p-3 rounded-xl bg-zinc-800/60">
-                            {req.viewerImage ? (
-                              <img src={req.viewerImage} alt="" className="w-9 h-9 rounded-full object-cover flex-shrink-0" />
-                            ) : (
-                              <div className="w-9 h-9 rounded-full bg-[#FF007A]/20 flex items-center justify-center text-[#FF007A] font-bold text-sm flex-shrink-0">
-                                {req.viewerName?.charAt(0)?.toUpperCase()}
-                              </div>
-                            )}
-                            <span className="text-white text-sm flex-1 truncate">{req.viewerName}</span>
-                            <button onClick={() => acceptRequest(req.viewerId)}
-                              className="p-1.5 rounded-lg bg-green-500/20 hover:bg-green-500/40 text-green-400 transition-colors" title="Accetta">
-                              <Check size={16} weight="bold" />
-                            </button>
-                            <button onClick={() => rejectRequest(req.viewerId)}
-                              className="p-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/40 text-red-400 transition-colors" title="Rifiuta">
-                              <X size={16} weight="bold" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Lista spettatori da invitare */}
-                  <div>
-                    <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
-                      Spettatori ({invitableViewers.length})
-                    </p>
-                    {invitableViewers.length === 0 ? (
-                      <p className="text-zinc-600 text-sm text-center py-4">Nessuno spettatore online</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {invitableViewers.map(v => (
-                          <div key={v.user_id} className="flex items-center gap-3 p-3 rounded-xl bg-zinc-800/40">
-                            {v.image ? (
-                              <img src={v.image} alt="" className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
-                            ) : (
-                              <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center text-zinc-300 font-bold text-sm flex-shrink-0">
-                                {v.name?.charAt(0)?.toUpperCase()}
-                              </div>
-                            )}
-                            <span className="text-white text-sm flex-1 truncate">{v.name}</span>
-                            <button onClick={() => inviteViewer(v.user_id)}
-                              className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#FF007A]/20 hover:bg-[#FF007A]/40 text-[#FF007A] text-xs font-semibold transition-colors">
-                              <UserPlus size={14} />Invita
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* ── Chat ────────────────────────────────────────── */}
+        {/* ── Chat + Partecipanti ─────────────────────────── */}
         <div className="w-full lg:w-80 flex flex-col border-l border-zinc-800 bg-[#09090B]" style={{ maxHeight: 'calc(100vh - 64px)' }}>
           <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
             <h2 className="font-bold text-white">Chat live</h2>
@@ -869,6 +800,134 @@ export default function LiveStreamPage() {
               <Heart size={14} className="text-[#FF007A]" />{likes}
             </div>
           </div>
+
+          {/* ── Sezione Partecipanti (solo per l'artista) ─── */}
+          {isArtist && (
+            <div className="border-b border-zinc-800 flex-shrink-0">
+              {/* Header collassabile */}
+              <button
+                onClick={() => setParticipantsOpen(p => !p)}
+                className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-zinc-800/40 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <Users size={13} className="text-zinc-400 flex-shrink-0" />
+                  <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">
+                    Partecipanti
+                  </span>
+                  <span className="text-[11px] text-zinc-600">
+                    {coHostConnected ? '1 co-host · ' : ''}{invitableViewers.length} online
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {coHostRequests.length > 0 && (
+                    <span className="px-1.5 py-0.5 rounded-full bg-[#FF007A] text-white text-[10px] font-bold leading-none">
+                      {coHostRequests.length}
+                    </span>
+                  )}
+                  <CaretDown
+                    size={13}
+                    className={`text-zinc-500 transition-transform duration-200 ${participantsOpen ? 'rotate-180' : ''}`}
+                  />
+                </div>
+              </button>
+
+              {participantsOpen && (
+                <div className="max-h-48 overflow-y-auto px-3 pb-3 space-y-2">
+
+                  {/* Co-host attivo */}
+                  {coHostConnected && coHostUser && (
+                    <div className="mt-2">
+                      <p className="text-[10px] font-semibold text-[#00F0FF] uppercase tracking-wider mb-1.5">
+                        Co-host attivo
+                      </p>
+                      <div className="flex items-center gap-2 px-2 py-2 rounded-xl bg-[#00F0FF]/5 border border-[#00F0FF]/20">
+                        {coHostUser.image ? (
+                          <img src={coHostUser.image} alt="" className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
+                        ) : (
+                          <div className="w-8 h-8 rounded-full bg-[#00F0FF]/20 flex items-center justify-center text-[#00F0FF] font-bold text-sm flex-shrink-0">
+                            {coHostUser.name?.charAt(0)?.toUpperCase()}
+                          </div>
+                        )}
+                        <span className="text-white text-sm flex-1 truncate">{coHostUser.name}</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#00F0FF]/20 text-[#00F0FF] font-bold flex-shrink-0">LIVE</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Richieste co-host in attesa */}
+                  {coHostRequests.length > 0 && (
+                    <div className="mt-2">
+                      <p className="text-[10px] font-semibold text-[#FF007A] uppercase tracking-wider mb-1.5">
+                        Richieste ({coHostRequests.length})
+                      </p>
+                      <div className="space-y-1.5">
+                        {coHostRequests.map(req => (
+                          <div key={req.viewerId} className="flex items-center gap-2 px-2 py-2 rounded-xl bg-[#FF007A]/5 border border-[#FF007A]/20">
+                            {req.viewerImage ? (
+                              <img src={req.viewerImage} alt="" className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
+                            ) : (
+                              <div className="w-8 h-8 rounded-full bg-[#FF007A]/20 flex items-center justify-center text-[#FF007A] font-bold text-sm flex-shrink-0">
+                                {req.viewerName?.charAt(0)?.toUpperCase()}
+                              </div>
+                            )}
+                            <span className="text-white text-sm flex-1 truncate">{req.viewerName}</span>
+                            <button
+                              onClick={() => acceptRequest(req.viewerId)}
+                              className="p-1.5 rounded-lg bg-green-500/20 hover:bg-green-500/40 text-green-400 transition-colors flex-shrink-0"
+                              title="Accetta"
+                            >
+                              <Check size={14} weight="bold" />
+                            </button>
+                            <button
+                              onClick={() => rejectRequest(req.viewerId)}
+                              className="p-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/40 text-red-400 transition-colors flex-shrink-0"
+                              title="Rifiuta"
+                            >
+                              <X size={14} weight="bold" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Spettatori online invitabili */}
+                  <div className="mt-2">
+                    <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider mb-1.5">
+                      Spettatori online ({invitableViewers.length})
+                    </p>
+                    {invitableViewers.length === 0 ? (
+                      <p className="text-zinc-600 text-xs py-1 px-1">
+                        Nessuno spettatore loggato online
+                      </p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {invitableViewers.map(v => (
+                          <div key={v.user_id} className="flex items-center gap-2 px-2 py-1.5 rounded-xl bg-zinc-800/40">
+                            {v.image ? (
+                              <img src={v.image} alt="" className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
+                            ) : (
+                              <div className="w-7 h-7 rounded-full bg-zinc-700 flex items-center justify-center text-zinc-300 font-bold text-xs flex-shrink-0">
+                                {v.name?.charAt(0)?.toUpperCase()}
+                              </div>
+                            )}
+                            <span className="text-white text-xs flex-1 truncate">{v.name}</span>
+                            <button
+                              onClick={() => inviteViewer(v.user_id)}
+                              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-[#FF007A]/20 hover:bg-[#FF007A]/40 text-[#FF007A] text-[11px] font-semibold transition-colors flex-shrink-0"
+                            >
+                              <UserPlus size={11} />Invita
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {messages.length === 0 ? (
