@@ -83,8 +83,7 @@ export default function PricingPage() {
       window.history.replaceState(null, '', '/dashboard');
       window.location.replace(data.url);
     } catch (err) {
-      console.error('handleSelectPro error:', err);
-      alert('Errore durante il pagamento: ' + err.message);
+      toast.error(err.message || 'Errore durante il pagamento');
     } finally {
       setLoading(false);
     }

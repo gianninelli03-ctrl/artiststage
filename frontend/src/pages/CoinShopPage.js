@@ -78,8 +78,7 @@ export default function CoinShopPage() {
       window.history.replaceState(null, '', '/dashboard');
       window.location.replace(data.url);
     } catch (err) {
-      console.error('handleBuy error:', err); toast.error(err.message || "Errore pagamento");
-      alert('Errore durante il pagamento: ' + err.message);
+      toast.error(err.message || "Errore pagamento");
     } finally {
       setBuying(null);
     }

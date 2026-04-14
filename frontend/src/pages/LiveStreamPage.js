@@ -632,9 +632,6 @@ export default function LiveStreamPage() {
       setCoinAmount('');
       toast.success(`🪙 ${n} monete inviate!`);
     } catch (e) {
-      console.error(e);
-      console.error('send_coins message:', e?.message);
-      console.error('send_coins details:', e?.details);
       setCoinError('Errore nell\'invio. Riprova.');
     } finally {
       setSendingCoins(false);

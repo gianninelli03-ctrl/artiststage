@@ -45,15 +45,16 @@ const DEFAULT_VISITOR_FORM = {
   profile_image_url: '', portfolio_urls: [], portfolio_media: []
 };
 
-const SUPABASE_ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY;
 const DELETE_USER_URL = `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/delete-user`;
 
 async function callDeleteUser(userId) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Sessione non trovata');
   const response = await fetch(DELETE_USER_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'apikey': SUPABASE_ANON_KEY
+      'Authorization': `Bearer ${session.access_token}`,
     },
     body: JSON.stringify({ user_id: userId })
   });
