@@ -5,6 +5,20 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
 );
 
+const supabaseAuth = createClient(
+  Deno.env.get("SUPABASE_URL")!,
+  Deno.env.get("SUPABASE_ANON_KEY")!
+);
+
+function escapeHtml(str: string): string {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
 const FROM_EMAIL = Deno.env.get("FROM_EMAIL") || "ArtistStage <noreply@artiststage.it>";
 
@@ -74,7 +88,7 @@ function baseLayout(content: string) {
 function templateWelcome(name: string) {
   return baseLayout(`
     <h1>Benvenuto su ArtistStage! 🎤</h1>
-    <p>Ciao <strong style="color:#fff">${name}</strong>,</p>
+    <p>Ciao <strong style="color:#fff">${escapeHtml(name)}</strong>,</p>
     <p>Il tuo account è stato creato con successo. Sei pronto a far conoscere il tuo talento al mondo.</p>
     <p>Cosa puoi fare adesso:</p>
     <div class="card">
@@ -89,12 +103,12 @@ function templateWelcome(name: string) {
 function templateBookingRequest(artistName: string, venueName: string, date: string, timeSlot: string, message: string) {
   return baseLayout(`
     <h1>Nuova richiesta di prenotazione! 📅</h1>
-    <p>Ciao <strong style="color:#fff">${artistName}</strong>, hai ricevuto una nuova richiesta di prenotazione.</p>
+    <p>Ciao <strong style="color:#fff">${escapeHtml(artistName)}</strong>, hai ricevuto una nuova richiesta di prenotazione.</p>
     <div class="card">
-      <div class="card-row"><span class="card-label">Venue / Cliente</span><span class="card-value">${venueName}</span></div>
-      <div class="card-row"><span class="card-label">Data</span><span class="card-value">${date}</span></div>
-      <div class="card-row"><span class="card-label">Fascia oraria</span><span class="card-value">${timeSlot}</span></div>
-      ${message ? `<div class="card-row" style="flex-direction:column;gap:4px"><span class="card-label">Messaggio</span><span class="card-value" style="margin-top:4px">${message}</span></div>` : ''}
+      <div class="card-row"><span class="card-label">Venue / Cliente</span><span class="card-value">${escapeHtml(venueName)}</span></div>
+      <div class="card-row"><span class="card-label">Data</span><span class="card-value">${escapeHtml(date)}</span></div>
+      <div class="card-row"><span class="card-label">Fascia oraria</span><span class="card-value">${escapeHtml(timeSlot)}</span></div>
+      ${message ? `<div class="card-row" style="flex-direction:column;gap:4px"><span class="card-label">Messaggio</span><span class="card-value" style="margin-top:4px">${escapeHtml(message)}</span></div>` : ''}
     </div>
     <p>Accedi alla dashboard per confermare o rifiutare la richiesta.</p>
     <a href="https://artiststage.it/dashboard#calendar" class="btn">Gestisci la richiesta</a>
@@ -110,11 +124,11 @@ function templateBookingResponse(venueName: string, artistName: string, date: st
     : `<p>Purtroppo l'artista non è disponibile per quella data. Puoi cercare altri artisti sulla piattaforma.</p>`;
   return baseLayout(`
     <h1>Aggiornamento prenotazione</h1>
-    <p>Ciao <strong style="color:#fff">${venueName}</strong>, ecco l'aggiornamento sulla tua richiesta a <strong style="color:#fff">${artistName}</strong>.</p>
+    <p>Ciao <strong style="color:#fff">${escapeHtml(venueName)}</strong>, ecco l'aggiornamento sulla tua richiesta a <strong style="color:#fff">${escapeHtml(artistName)}</strong>.</p>
     <div class="card">
-      <div class="card-row"><span class="card-label">Artista</span><span class="card-value">${artistName}</span></div>
-      <div class="card-row"><span class="card-label">Data</span><span class="card-value">${date}</span></div>
-      <div class="card-row"><span class="card-label">Fascia oraria</span><span class="card-value">${timeSlot}</span></div>
+      <div class="card-row"><span class="card-label">Artista</span><span class="card-value">${escapeHtml(artistName)}</span></div>
+      <div class="card-row"><span class="card-label">Data</span><span class="card-value">${escapeHtml(date)}</span></div>
+      <div class="card-row"><span class="card-label">Fascia oraria</span><span class="card-value">${escapeHtml(timeSlot)}</span></div>
       <div class="card-row"><span class="card-label">Stato</span><span class="card-value">${badge}</span></div>
     </div>
     ${body}
@@ -132,9 +146,9 @@ function templateCashoutUpdate(artistName: string, amountEur: string, status: st
     : `<p>Il tuo cashout è stato rifiutato. Per chiarimenti contatta il supporto a <a href="mailto:support@artiststage.it" style="color:#FF007A;">support@artiststage.it</a>.</p>`;
   return baseLayout(`
     <h1>Aggiornamento cashout</h1>
-    <p>Ciao <strong style="color:#fff">${artistName}</strong>,</p>
+    <p>Ciao <strong style="color:#fff">${escapeHtml(artistName)}</strong>,</p>
     <div class="card">
-      <div class="card-row"><span class="card-label">Importo netto richiesto</span><span class="card-value">€${amountEur}</span></div>
+      <div class="card-row"><span class="card-label">Importo netto richiesto</span><span class="card-value">€${escapeHtml(amountEur)}</span></div>
       <div class="card-row"><span class="card-label">Stato</span><span class="card-value">${badge}</span></div>
     </div>
     ${body}
@@ -144,9 +158,16 @@ function templateCashoutUpdate(artistName: string, amountEur: string, status: st
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
-  // Require auth
+  // Verifica JWT
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  const token = authHeader.replace("Bearer ", "");
+  const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(token);
+  if (authError || !user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

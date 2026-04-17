@@ -42,7 +42,10 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { type, price_id, package_id, user_id, coins, package_name } = await req.json();
+    const { type, price_id, package_id, coins, package_name } = await req.json();
+
+    // user_id sempre dal JWT verificato, mai dal body
+    const user_id = user.id;
 
     const origin = req.headers.get("origin") || "http://localhost:3000";
 

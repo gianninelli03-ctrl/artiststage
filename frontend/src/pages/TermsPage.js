@@ -52,7 +52,7 @@ export default function TermsPage() {
               ArtistStage utilizza un sistema di valuta virtuale denominata "Coin":
             </p>
             <ul className="list-disc list-inside space-y-2">
-              <li>1 Coin = €0,01 (un centesimo di euro) al momento dell'acquisto.</li>
+              <li>Il prezzo dei Coin varia in base al pacchetto acquistato; il valore di riscatto per gli artisti è di €0,014 lordi per Coin (€0,0098 netti dopo la commissione di piattaforma del 30%).</li>
               <li>I Coin acquistati non sono rimborsabili, salvo quanto previsto dalla normativa sul diritto di recesso.</li>
               <li>I Coin possono essere donati agli artisti durante le live o inviati tramite la piattaforma.</li>
               <li>I Coin non hanno valore legale al di fuori della piattaforma e non possono essere scambiati tra utenti al di fuori del sistema.</li>
@@ -63,8 +63,8 @@ export default function TermsPage() {
           <section>
             <h2 className="text-xl font-semibold text-white mb-3">5. Cashout per artisti</h2>
             <ul className="list-disc list-inside space-y-2">
-              <li>Gli artisti possono richiedere il cashout dei Coin ricevuti una volta raggiunto il minimo di €20,00.</li>
-              <li>ArtistStage trattiene una commissione del 30% sull'importo lordo convertito.</li>
+              <li>Gli artisti possono richiedere il cashout dei Coin ricevuti una volta raggiunto il minimo di €20,00 netti.</li>
+              <li>ArtistStage trattiene una commissione del 30% sull'importo lordo (€0,014 per Coin), riconoscendo all'artista €0,0098 netti per Coin.</li>
               <li>I cashout vengono elaborati manualmente entro 5-10 giorni lavorativi.</li>
               <li>Il cashout è soggetto a verifica dell'identità e può essere rifiutato in caso di attività sospetta.</li>
               <li>Gli artisti sono responsabili della corretta dichiarazione fiscale dei proventi ricevuti.</li>
