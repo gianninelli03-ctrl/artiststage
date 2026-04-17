@@ -41,6 +41,13 @@ export default function DiscoverPage() {
   const sentinelRef = useRef(null);
   const offsetRef = useRef(0);
 
+  // Debounce della ricerca testuale: 400ms dopo l'ultimo keystroke
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 400);
+    return () => clearTimeout(t);
+  }, [search]);
+
   // Query con filtri server-side + range per paginazione
   const fetchItems = useCallback(async (from) => {
     let query = supabase
@@ -49,13 +56,13 @@ export default function DiscoverPage() {
       .order('created_at', { ascending: false })
       .range(from, from + PAGE_SIZE - 1);
     if (activeCategory) query = query.eq('category', activeCategory);
-      if (search && search.trim()) query = query.or('stage_name.ilike.%' + search.trim() + '%,bio.ilike.%' + search.trim() + '%');
+    if (debouncedSearch) query = query.or(`stage_name.ilike.%${debouncedSearch}%,bio.ilike.%${debouncedSearch}%`);
     if (locationFilter) query = query.ilike('location', `%${locationFilter}%`);
     if (availabilityFilter) query = query.eq('availability', availabilityFilter);
     const { data, error } = await query;
     if (error) throw error;
     return data || [];
-  }, [activeCategory, locationFilter, availabilityFilter]);
+  }, [activeCategory, debouncedSearch, locationFilter, availabilityFilter]);
 
   // Reset e carica pagina 0 quando cambiano i filtri server-side
   useEffect(() => {

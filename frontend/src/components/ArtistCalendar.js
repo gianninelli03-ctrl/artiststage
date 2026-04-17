@@ -142,6 +142,37 @@ export default function ArtistCalendar({ artistId, artistUserId, currentUser, is
     if (!currentUser) { toast.error('Accedi per prenotare'); return; }
     setSaving(true);
     try {
+      // Controlla se lo slot è già confermato per un altro cliente
+      const { data: confirmed } = await supabase
+        .from('booking_requests')
+        .select('id')
+        .eq('artist_id', artistId)
+        .eq('date', selectedDay)
+        .eq('time_slot', timeSlot)
+        .eq('status', 'confirmed')
+        .limit(1);
+      if (confirmed && confirmed.length > 0) {
+        toast.error('Questo slot è già stato confermato per un altro cliente.');
+        setSaving(false);
+        return;
+      }
+
+      // Controlla se questo visitatore ha già una richiesta pending/confermata per lo stesso slot
+      const { data: duplicate } = await supabase
+        .from('booking_requests')
+        .select('id')
+        .eq('artist_id', artistId)
+        .eq('visitor_id', currentUser.id)
+        .eq('date', selectedDay)
+        .eq('time_slot', timeSlot)
+        .in('status', ['pending', 'confirmed'])
+        .limit(1);
+      if (duplicate && duplicate.length > 0) {
+        toast.error('Hai già una richiesta in attesa per questo slot.');
+        setSaving(false);
+        return;
+      }
+
       const slotLabel = TIME_SLOTS.find(t => t.id === timeSlot)?.label || timeSlot;
       const dateFormatted = new Date(selectedDay + 'T12:00:00').toLocaleDateString('it-IT', {
         weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'

@@ -25,6 +25,13 @@ export default function StagePage() {
   const sentinelRef = useRef(null);
   const offsetRef = useRef(0);
 
+  // Debounce della ricerca testuale: 400ms dopo l'ultimo keystroke
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 400);
+    return () => clearTimeout(t);
+  }, [search]);
+
   // Query con filtri server-side + range per paginazione
   const fetchItems = useCallback(async (from) => {
     let query = supabase
@@ -33,11 +40,12 @@ export default function StagePage() {
       .order('created_at', { ascending: false })
       .range(from, from + PAGE_SIZE - 1);
     if (activeCategory) query = query.eq('activity_type', activeCategory);
+    if (debouncedSearch) query = query.or(`name.ilike.%${debouncedSearch}%,bio.ilike.%${debouncedSearch}%`);
     if (locationFilter) query = query.ilike('location', `%${locationFilter}%`);
     const { data, error } = await query;
     if (error) throw error;
     return data || [];
-  }, [activeCategory, locationFilter]);
+  }, [activeCategory, debouncedSearch, locationFilter]);
 
   // Reset e carica pagina 0 quando cambiano i filtri server-side
   useEffect(() => {
