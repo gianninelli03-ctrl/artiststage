@@ -376,50 +376,58 @@ export default function DashboardPage() {
   const [form, setForm] = useState(DEFAULT_ARTIST_FORM);
   const [newVideoUrl, setNewVideoUrl] = useState('');
   const [isPro, setIsPro] = useState(false);
+  const [showGoLiveModal, setShowGoLiveModal] = useState(false);
+  const [liveTitle, setLiveTitle] = useState('');
+  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   // ── ref per scroll automatico al calendario via #calendar ──
   const calendarRef = useRef(null);
   const navigate = useNavigate();
-  const handleGoLive = async () => {
-  if (!profile?.id || !profile?.stage_name) {
-    toast.error('Completa il profilo prima di andare in live');
-    setEditing(true);
-    return;
-  }
-  const title = window.prompt('Titolo della tua live:', `${profile.stage_name} in Live!`);
-  if (!title) return;
-  try {
-    const { data, error } = await supabase.from('live_streams').insert({
-      artist_id: profile.id,
-      artist_user_id: user.id,
-      title,
-      is_active: true
-    }).select().single();
-    if (error) throw error;
-
-    // Invia notifica a tutti i follower
-    const { data: followers } = await supabase
-      .from('followers')
-      .select('follower_id')
-      .eq('artist_id', profile.id);
-
-    if (followers?.length > 0) {
-      const notifications = followers.map(f => ({
-        user_id: f.follower_id,
-        type: 'live',
-        title: `${profile.stage_name} è in Live! 🔴`,
-        message: `Sta trasmettendo: "${title}"`,
-        link: `/live/${data.id}`,
-        read: false
-      }));
-      await supabase.from('notifications').insert(notifications);
+  const handleGoLive = () => {
+    if (!profile?.id || !profile?.stage_name) {
+      toast.error('Completa il profilo prima di andare in live');
+      setEditing(true);
+      return;
     }
+    setLiveTitle(`${profile.stage_name} in Live!`);
+    setShowGoLiveModal(true);
+  };
 
-    navigate(`/live/${data.id}`);
-  } catch (e) {
-    toast.error('Errore nell\'avvio della live');
-  }
-};
+  const confirmGoLive = async () => {
+    if (!liveTitle.trim()) return;
+    setShowGoLiveModal(false);
+    try {
+      const { data, error } = await supabase.from('live_streams').insert({
+        artist_id: profile.id,
+        artist_user_id: user.id,
+        title: liveTitle.trim(),
+        is_active: true
+      }).select().single();
+      if (error) throw error;
+
+      const { data: followers } = await supabase
+        .from('followers')
+        .select('follower_id')
+        .eq('artist_id', profile.id);
+
+      if (followers?.length > 0) {
+        const notifications = followers.map(f => ({
+          user_id: f.follower_id,
+          type: 'live',
+          title: `${profile.stage_name} è in Live! 🔴`,
+          message: `Sta trasmettendo: "${liveTitle.trim()}"`,
+          link: `/live/${data.id}`,
+          read: false
+        }));
+        await supabase.from('notifications').insert(notifications);
+      }
+
+      navigate(`/live/${data.id}`);
+    } catch (e) {
+      toast.error('Errore nell\'avvio della live');
+    }
+  };
 
   useEffect(() => {
     if (window.location.hash === '#calendar' && calendarRef.current) {
@@ -537,14 +545,22 @@ export default function DashboardPage() {
     finally { setSaving(false); }
   };
 
-  const handleDelete = async () => {
-    if (!window.confirm('Sei sicuro di voler eliminare il tuo account? Questa azione è irreversibile.')) return;
+  const handleDelete = () => {
+    setShowDeleteAccountModal(true);
+  };
+
+  const confirmDeleteAccount = async () => {
+    setShowDeleteAccountModal(false);
+    setDeletingAccount(true);
     try {
       await supabase.from('artist_profiles').delete().eq('user_id', user.id);
       await callDeleteUser(user.id);
       await supabase.auth.signOut();
       window.location.href = '/';
-    } catch (e) { toast.error('Errore: ' + e.message); }
+    } catch (e) {
+      toast.error('Errore: ' + e.message);
+      setDeletingAccount(false);
+    }
   };
 
   const handleMediaUpload = async (e) => {
@@ -900,6 +916,54 @@ export default function DashboardPage() {
           </div>
         </div>
       </main>
+
+      {/* Modal: titolo live */}
+      {showGoLiveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 w-full max-w-sm">
+            <h3 className="font-bold text-white mb-2">Vai in Live</h3>
+            <p className="text-sm text-zinc-400 mb-4">Inserisci un titolo per la tua diretta</p>
+            <input
+              type="text"
+              value={liveTitle}
+              onChange={e => setLiveTitle(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && confirmGoLive()}
+              className="input-dark w-full mb-6"
+              placeholder="Es. Sessione acustica di venerdì sera"
+              autoFocus
+              maxLength={100}
+            />
+            <div className="flex gap-3">
+              <button onClick={() => setShowGoLiveModal(false)} className="btn-outline flex-1">Annulla</button>
+              <button onClick={confirmGoLive} disabled={!liveTitle.trim()} className="btn-primary flex-1">
+                Inizia Live
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: conferma eliminazione account */}
+      {showDeleteAccountModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 w-full max-w-sm">
+            <h3 className="font-bold text-white mb-2">Elimina account</h3>
+            <p className="text-sm text-zinc-400 mb-6">
+              Sei sicuro di voler eliminare il tuo account?
+              <span className="block mt-2 text-red-400 font-medium">Questa azione è irreversibile.</span>
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setShowDeleteAccountModal(false)} className="btn-outline flex-1">Annulla</button>
+              <button onClick={confirmDeleteAccount} disabled={deletingAccount}
+                className="flex-1 py-2 rounded-xl bg-red-500 hover:bg-red-400 disabled:opacity-50 text-white font-bold transition-colors">
+                {deletingAccount
+                  ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto" />
+                  : 'Elimina'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

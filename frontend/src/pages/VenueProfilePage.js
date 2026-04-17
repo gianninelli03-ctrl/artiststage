@@ -9,6 +9,16 @@ import {
 } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
+function safeUrl(url) {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' || u.protocol === 'http:' ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function VenueProfilePage() {
   const { venueId } = useParams();
   const { user } = useAuth();
@@ -125,13 +135,13 @@ export default function VenueProfilePage() {
                       <Phone size={20} />
                     </a>
                   )}
-                  {venue.website && (
-                    <a href={venue.website} target="_blank" rel="noopener noreferrer" className="p-2 rounded-full bg-zinc-800 hover:bg-zinc-700 transition-colors">
+                  {safeUrl(venue.website) && (
+                    <a href={safeUrl(venue.website)} target="_blank" rel="noopener noreferrer" className="p-2 rounded-full bg-zinc-800 hover:bg-zinc-700 transition-colors">
                       <Globe size={20} />
                     </a>
                   )}
-                  {venue.instagram && (
-                    <a href={venue.instagram} target="_blank" rel="noopener noreferrer" className="p-2 rounded-full bg-zinc-800 hover:bg-zinc-700 transition-colors">
+                  {safeUrl(venue.instagram) && (
+                    <a href={safeUrl(venue.instagram)} target="_blank" rel="noopener noreferrer" className="p-2 rounded-full bg-zinc-800 hover:bg-zinc-700 transition-colors">
                       <InstagramLogo size={20} />
                     </a>
                   )}
@@ -183,8 +193,8 @@ export default function VenueProfilePage() {
               {venue.portfolio_urls?.length > 0 && (
                 <div className="card p-6">
                   <h2 className="text-lg font-bold mb-4 text-white">Video</h2>
-                  {venue.portfolio_urls.map((url, i) => (
-                    <a key={i} href={url} target="_blank" rel="noopener noreferrer"
+                  {venue.portfolio_urls.map((url, i) => safeUrl(url) && (
+                    <a key={i} href={safeUrl(url)} target="_blank" rel="noopener noreferrer"
                       className="flex items-center gap-2 mb-2 text-sm text-[#00F0FF] hover:underline">
                       ▶ Video {i + 1}
                     </a>

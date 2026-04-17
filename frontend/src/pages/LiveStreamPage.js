@@ -59,6 +59,7 @@ export default function LiveStreamPage() {
   const [isCoHost, setIsCoHost] = useState(false);          // viewer diventato co-host
   const [coHostConnected, setCoHostConnected] = useState(false); // artista vede il video co-host
   const [presenceList, setPresenceList] = useState([]);      // lista spettatori da presence
+  const [showEndLiveModal, setShowEndLiveModal] = useState(false);
 
   // ── Refs WebRTC base ──────────────────────────────────────
   const localVideoRef = useRef(null);
@@ -564,8 +565,12 @@ export default function LiveStreamPage() {
     setCamOn(prev => !prev);
   };
 
-  const endLive = async () => {
-    if (!window.confirm('Vuoi terminare la live?')) return;
+  const endLive = () => {
+    setShowEndLiveModal(true);
+  };
+
+  const confirmEndLive = async () => {
+    setShowEndLiveModal(false);
     try {
       localStreamRef.current?.getTracks().forEach(t => t.stop());
       Object.values(peerConnectionsRef.current).forEach(pc => pc.close());
@@ -1028,6 +1033,24 @@ export default function LiveStreamPage() {
           </div>
         </div>
       </main>
+
+      {showEndLiveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 w-full max-w-sm">
+            <h3 className="font-bold text-white mb-2">Termina la live</h3>
+            <p className="text-sm text-zinc-400 mb-6">
+              Vuoi terminare la diretta? Gli spettatori collegati verranno disconnessi.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setShowEndLiveModal(false)} className="btn-outline flex-1">Continua</button>
+              <button onClick={confirmEndLive}
+                className="flex-1 py-2 rounded-xl bg-red-500 hover:bg-red-400 text-white font-bold transition-colors">
+                Termina
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

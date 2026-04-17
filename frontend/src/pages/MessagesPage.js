@@ -38,6 +38,7 @@ export default function MessagesPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [unreadCounts, setUnreadCounts] = useState({});
   const [deletingConv, setDeletingConv] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const messagesEndRef = useRef(null);
   const channelRef = useRef(null);
 
@@ -99,8 +100,8 @@ export default function MessagesPage() {
       for (const c of convList) counts[c.userId] = c.unread;
       setUnreadCounts(counts);
     } catch (e) {
-      console.error(e); setLoadError(e.message || "Errore caricamento messaggi");
-      setLoadError('Errore nel caricamento chat');
+      console.error(e);
+      setLoadError(e.message || 'Errore nel caricamento chat');
     }
   }, [user?.id]);
 
@@ -250,8 +251,13 @@ export default function MessagesPage() {
     finally { setSending(false); }
   };
 
-  const handleDeleteConversation = async () => {
-    if (!selectedUser || !window.confirm(`Eliminare la chat con ${selectedUser.name}? Non la vedrai più, ma l'altro utente la conserverà.`)) return;
+  const handleDeleteConversation = () => {
+    if (!selectedUser) return;
+    setShowDeleteModal(true);
+  };
+
+  const confirmDeleteConversation = async () => {
+    setShowDeleteModal(false);
     setDeletingConv(true);
     try {
       // Inserisce nella tabella deleted_conversations — solo per questo utente
@@ -423,6 +429,24 @@ export default function MessagesPage() {
           </div>
         </div>
       </main>
+
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 w-full max-w-sm">
+            <h3 className="font-bold text-white mb-2">Elimina conversazione</h3>
+            <p className="text-sm text-zinc-400 mb-6">
+              Eliminare la chat con <span className="text-white font-medium">{selectedUser?.name}</span>?
+              Non la vedrai più, ma l'altro utente la conserverà.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setShowDeleteModal(false)} className="btn-outline flex-1">Annulla</button>
+              <button onClick={confirmDeleteConversation} className="flex-1 py-2 rounded-xl bg-red-500 hover:bg-red-400 text-white font-bold transition-colors">
+                Elimina
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
