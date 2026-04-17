@@ -46,7 +46,7 @@ export default function AdminPage() {
     ] = await Promise.all([
       supabase.from('profiles').select('*', { count: 'exact' }).order('created_at', { ascending: false }).limit(50),
       supabase.from('coin_purchases').select('*').order('created_at', { ascending: false }).limit(50),
-      supabase.from('cashout_requests').select('*'),
+      supabase.from('cashout_requests').select('*').order('created_at', { ascending: false }).limit(200),
     ]);
 
     // Carica stage_name per ogni artist_id presente nei cashout
@@ -115,7 +115,7 @@ export default function AdminPage() {
   );
 
   const TABS = ['stats', 'users', 'purchases', 'cashouts', 'storico'];
-  const TAB_LABELS = { stats: 'Statistiche', users: 'Utenti', purchases: 'Transazioni', cashouts: `Cashout${stats.pendingCashouts > 0 ? ` (${stats.pendingCashouts})` : ''}`, storico: 'Storico' };
+  const TAB_LABELS = { stats: 'Statistiche', users: 'Utenti', purchases: 'Cashout Mensile', cashouts: `Cashout${stats.pendingCashouts > 0 ? ` (${stats.pendingCashouts})` : ''}`, storico: 'Storico' };
 
   return (
     <div style={{ minHeight: '100vh', background: '#0a0a0a', color: '#fff', padding: '32px 20px' }}>

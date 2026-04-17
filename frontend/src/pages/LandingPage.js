@@ -305,7 +305,7 @@ export default function LandingPage() {
               <a href="mailto:support@artiststage.it" className="hover:text-white transition-colors">Contatti</a>
             </div>
             <p className="text-sm text-zinc-500">
-              © 2025 ArtistStage. Tutti i diritti riservati.
+              © 2026 ArtistStage. Tutti i diritti riservati.
             </p>
           </div>
         </div>

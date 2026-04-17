@@ -184,10 +184,17 @@ export default function FeedPage() {
           created_at: v.created_at
         }));
 
+        const now = Date.now();
+        const msPerDay = 86400000;
         const all = [...artistItems, ...venueItems];
         const sorted = all.sort((a, b) => {
-          const scorea = (a.likes_count * 2) + (a.photos.length * 0.5) + (new Date(a.created_at) / 1e10);
-          const scoreb = (b.likes_count * 2) + (b.photos.length * 0.5) + (new Date(b.created_at) / 1e10);
+          const ageA = (now - new Date(a.created_at)) / msPerDay;
+          const ageB = (now - new Date(b.created_at)) / msPerDay;
+          // recency: max 10 punti per profilo nuovo, decade a 0 dopo 30 giorni
+          const recencyA = Math.max(0, 10 * (1 - ageA / 30));
+          const recencyB = Math.max(0, 10 * (1 - ageB / 30));
+          const scorea = (a.likes_count * 2) + (a.photos.length * 0.5) + recencyA;
+          const scoreb = (b.likes_count * 2) + (b.photos.length * 0.5) + recencyB;
           return scoreb - scorea;
         });
 

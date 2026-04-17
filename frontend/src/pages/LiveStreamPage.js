@@ -60,6 +60,7 @@ export default function LiveStreamPage() {
   const [coHostConnected, setCoHostConnected] = useState(false); // artista vede il video co-host
   const [presenceList, setPresenceList] = useState([]);      // lista spettatori da presence
   const [showEndLiveModal, setShowEndLiveModal] = useState(false);
+  const lastViewerUpdateRef = useRef(0);                     // throttle DB update viewer_count
 
   // ── Refs WebRTC base ──────────────────────────────────────
   const localVideoRef = useRef(null);
@@ -186,7 +187,11 @@ export default function LiveStreamPage() {
       setViewerCount(viewers.length);
       setPresenceList(viewers);
       presenceListRef.current = viewers;
-      supabase.from('live_streams').update({ viewer_count: viewers.length }).eq('id', streamId);
+      const now = Date.now();
+      if (now - lastViewerUpdateRef.current >= 5000) {
+        lastViewerUpdateRef.current = now;
+        supabase.from('live_streams').update({ viewer_count: viewers.length }).eq('id', streamId);
+      }
     });
 
     channelRef.current.subscribe(async (status) => {
